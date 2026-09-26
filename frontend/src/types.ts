@@ -217,6 +217,44 @@ export interface EvidenceRef {
   mock: boolean
 }
 
+export interface SourceRecord {
+  id: string
+  kind: 'source' | 'knowledge'
+  resource_domain: string
+  resource_key: string
+  data: Record<string, unknown>
+  mock: boolean
+  accessed_by_agent: string
+  fields_hidden: number
+  flagged: boolean
+  out_of_scope_refs: string[]
+  title: string | null
+}
+
+export interface CalculationRecord {
+  id: string
+  kind: 'calculation'
+  name: string
+  formula: string
+  inputs: Record<string, unknown>
+  input_sources: Record<string, string>
+  thresholds_source_ids: string[]
+  outputs: Record<string, unknown>
+  classification: string | null
+  computed_by_agent: string
+  round: number
+}
+
+export interface AgentOutputRecord {
+  id: string
+  kind: 'agent_output'
+  agent_id: string
+  round: number
+  output: Record<string, unknown>
+}
+
+export type EvidenceItem = SourceRecord | CalculationRecord | AgentOutputRecord
+
 export interface AgentGovernanceView {
   agent_id: string
   data_domains_accessed: string[]
