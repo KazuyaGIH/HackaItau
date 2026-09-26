@@ -21,7 +21,6 @@ class EventType(str, Enum):
     SECURITY_EVENT = "SECURITY_EVENT"
     TOOL_CALLED = "TOOL_CALLED"
     LLM_CALLED = "LLM_CALLED"
-    LLM_FALLBACK_USED = "LLM_FALLBACK_USED"
     GROUNDING_REJECTED = "GROUNDING_REJECTED"
     AGENT_COMPLETED = "AGENT_COMPLETED"
     REVIEW_STARTED = "REVIEW_STARTED"
@@ -91,5 +90,4 @@ class LLMEventPayload(BaseModel):
     tokens_in: int
     tokens_out: int
     latency_ms: int
-    fallback: bool
     retry: bool = False

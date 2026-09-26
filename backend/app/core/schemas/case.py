@@ -69,7 +69,6 @@ class AgentCardState(BaseModel):
     tool_calls: int = 0
     source_count: int = 0
     denied_calls: int = 0
-    fallback_used: bool = False
     output: dict[str, Any] | None = None  # output compacto (dump do output_schema)
 
 

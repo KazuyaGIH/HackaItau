@@ -3,6 +3,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import Settings
+from app.container import build_container, get_container
 from app.main import app
 
 PROMPT = "O cliente Fazenda Horizonte S.A. solicita R$ 50 milhões para custeio da safra de soja 2026/27."
@@ -21,7 +23,7 @@ def test_create_case_freezes_scope_and_selects_agents(client):
     assert body["scope"]["client_ids"] == ["CLIENTE-001"] and body["scope"]["purpose"] == "credit_analysis_agro"
     assert body["interpreted"]["requested_amount"] == 50_000_000
     assert body["selected_agents"] == ["agro_eligibility", "agro_credit_risk", "agro_structuring", "credit_review"]
-    assert body["llm_mode"] in ("real", "fallback", "unconfigured")
+    assert body["llm_mode"] in ("real", "unconfigured")
 
     events = client.get(f"/api/cases/{body['case_id']}/events", params={"after": 0}).json()
     types = [e["type"] for e in events]
@@ -48,15 +50,21 @@ def test_unresolved_client_waits_for_input_then_freezes(client):
     assert client.get(f"/api/cases/{cid}").json()["scope"]["client_ids"] == ["CLIENTE-001"]
 
 
-def test_run_is_async_and_state_guarded(client):
-    r = client.post("/api/cases", json={"user_id": "analyst-001", "prompt": PROMPT})
-    cid = r.json()["case_id"]
-    assert client.get(f"/api/cases/{cid}/report").status_code == 409  # sem relatório antes de rodar
-    r = client.post(f"/api/cases/{cid}/run")
-    assert r.status_code == 202 and r.json()["status"] in ("running", "failed", "human_review_required")
-    assert client.post(f"/api/cases/{cid}/run").status_code == 409  # não roda duas vezes
-    if client.get(f"/api/cases/{cid}").json()["status"] != "human_review_required":
+def test_run_refused_without_llm_and_state_guarded():
+    container = build_container(Settings(llm_api_key="", _env_file=None))
+    app.dependency_overrides[get_container] = lambda: container
+    try:
+        client = TestClient(app)
+        assert client.get("/api/health").json()["llm_mode"] == "unconfigured"
+        r = client.post("/api/cases", json={"user_id": "analyst-001", "prompt": PROMPT})
+        cid = r.json()["case_id"]
+        assert client.get(f"/api/cases/{cid}/report").status_code == 409  # sem relatório antes de rodar
+        r = client.post(f"/api/cases/{cid}/run")
+        assert r.status_code == 503 and r.json()["detail"]["code"] == "llm_not_configured"
+        assert client.get(f"/api/cases/{cid}").json()["status"] == "planned"  # nada executou
         assert client.post(f"/api/cases/{cid}/human-review", json={"decision": "approve_next_step"}).status_code == 409
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_unknown_user_and_case(client):
@@ -66,4 +74,4 @@ def test_unknown_user_and_case(client):
 
 def test_health_reports_llm_mode(client):
     body = client.get("/api/health").json()
-    assert body["ok"] is True and body["llm_mode"] in ("real", "fallback", "unconfigured")
+    assert body["ok"] is True and body["llm_mode"] in ("real", "unconfigured")

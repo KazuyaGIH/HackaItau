@@ -2,7 +2,7 @@
 
 export interface HealthResponse {
   ok: boolean
-  llm_mode: 'real' | 'fallback' | 'unconfigured'
+  llm_mode: 'real' | 'unconfigured'
   demo_mode: boolean
 }
 
@@ -36,7 +36,6 @@ export type EventType =
   | 'SECURITY_EVENT'
   | 'TOOL_CALLED'
   | 'LLM_CALLED'
-  | 'LLM_FALLBACK_USED'
   | 'GROUNDING_REJECTED'
   | 'AGENT_COMPLETED'
   | 'REVIEW_STARTED'
@@ -113,7 +112,6 @@ export interface AgentCardState {
   tool_calls: number
   source_count: number
   denied_calls: number
-  fallback_used: boolean
   output: Record<string, unknown> | null
 }
 
@@ -262,7 +260,6 @@ export interface AgentGovernanceView {
   denied_calls: number
   fields_hidden: number
   llm_calls: number
-  fallback_used: boolean
 }
 
 export interface GovernanceView {
@@ -318,7 +315,6 @@ export interface Report {
   }
   governance: GovernanceView
   human_gate: HumanGateView
-  llm_mode: 'real' | 'fallback' | 'mixed'
 }
 
 export interface CaseState {
@@ -338,7 +334,7 @@ export interface CaseState {
   rework_rounds: number
   report: Report | null
   counters: CaseCounters
-  llm_mode: string
+  llm_mode: 'real' | 'unconfigured'
   error: string | null
   last_event_seq: number
 }

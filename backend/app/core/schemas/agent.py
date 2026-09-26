@@ -66,7 +66,6 @@ class LLMUsage(BaseModel):
     tokens_in: int = 0
     tokens_out: int = 0
     latency_ms: int = 0
-    fallback_used: bool = False
     retries: int = 0
 
 

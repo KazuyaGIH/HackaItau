@@ -14,7 +14,7 @@ from app.llm.provider import LLMResponse, Message, ToolSchema
 
 
 class LLMError(Exception):
-    """Falha de transporte/provider. O runtime decide entre erro e ScriptedFallback."""
+    """Falha de transporte/provider. O runtime converte em AgentExecutionError (auditável)."""
 
 
 class SecretInPromptError(LLMError):

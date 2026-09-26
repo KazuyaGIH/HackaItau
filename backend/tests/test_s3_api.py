@@ -8,13 +8,15 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.container import build_container, get_container
 from app.main import app
+from tests.fake_llm import StubProvider
 
 PROMPT = "O cliente Fazenda Horizonte S.A. solicita R$ 50 milhões para custeio da safra de soja 2025/26."
 
 
 @pytest.fixture
 def client():
-    container = build_container(Settings(llm_api_key="", llm_fallback_enabled=True, _env_file=None))
+    container = build_container(Settings(llm_api_key="", _env_file=None))
+    container.runtime.provider = StubProvider()
     app.dependency_overrides[get_container] = lambda: container
     with TestClient(app) as c:  # lifespan mantém o event loop vivo para a task em background
         yield c
@@ -39,7 +41,6 @@ def test_run_poll_report_and_human_gate(client):
 
     st = _wait_terminal(client, cid)
     assert st["status"] == "human_review_required", st.get("error")
-    assert st["llm_mode"] == "fallback" and all(a["fallback_used"] for a in st["agents"])
     assert st["counters"]["llm_calls"] >= 4 and st["counters"]["sources"] > 0
     assert {a["agent_id"]: a["status"] for a in st["agents"]} == {
         "agro_eligibility": "completed",

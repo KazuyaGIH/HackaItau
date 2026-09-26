@@ -76,7 +76,6 @@ class AgentGovernanceView(BaseModel):
     denied_calls: int
     fields_hidden: int
     llm_calls: int
-    fallback_used: bool
 
 
 class GovernanceView(BaseModel):
@@ -117,4 +116,3 @@ class Report(BaseModel):
     review: ReviewView
     governance: GovernanceView
     human_gate: HumanGateView
-    llm_mode: Literal["real", "fallback", "mixed"]

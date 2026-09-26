@@ -18,15 +18,11 @@ from app.tools.data_tools import install_data_handlers
 
 
 def llm_mode(s: Settings) -> str:
-    if s.llm_configured:
-        return "real"
-    if s.llm_fallback_enabled:
-        return "fallback"
-    return "unconfigured"
+    return "real" if s.llm_configured else "unconfigured"
 
 
 def build_provider(s: Settings) -> LLMProvider | None:
-    """Único ponto que lê LLM_API_KEY. Sem chave → None (runtime usa ScriptedFallback se habilitado)."""
+    """Único ponto que lê LLM_API_KEY. Sem chave → None (a execução dos agentes falha de forma auditável)."""
     if not s.llm_configured:
         return None
     return OpenAICompatProvider(
@@ -58,7 +54,7 @@ def build_container(settings: Settings | None = None) -> Container:
     knowledge = KeywordKnowledgeRetriever(s.knowledge_corpus_dir)
     resolver = BootstrapClientResolver(repo)
     agents = AgentRegistry()
-    runtime = AgentRuntime(build_provider(s), s.llm_model, fallback_enabled=s.llm_fallback_enabled)
+    runtime = AgentRuntime(build_provider(s), s.llm_model)
     orchestrator = Orchestrator(
         store, resolver, s, agents=agents, runtime=runtime, repo=repo, knowledge=knowledge, llm_mode=llm_mode(s)
     )
