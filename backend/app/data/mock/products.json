@@ -1,0 +1,53 @@
+{
+  "_meta": { "mock": true, "note": "Catálogo fictício. internal_margin_target é campo `never`." },
+  "records": [
+    {
+      "product_id": "PROD-CUSTEIO-01",
+      "name": "Custeio Agro Safra (mock)",
+      "purpose": "custeio",
+      "min_amount": 1000000,
+      "max_amount": 80000000,
+      "tenor_months_min": 6,
+      "tenor_months_max": 14,
+      "amortization_options": ["bullet_post_harvest", "two_installments_post_harvest"],
+      "guarantee_options": ["penhor_safra", "cpr_financeira", "aval_socios"],
+      "conditions": ["comprovacao_area_plantada", "seguro_agricola_recomendado"],
+      "rate_note": "Taxa indicativa mock; definida na precificação.",
+      "eligibility_criteria": ["produtor_rural_ativo", "area_plantada_comprovada", "sem_restritivos_relevantes"],
+      "required_documents": ["matricula_ou_arrendamento", "plano_de_plantio", "demonstracoes_financeiras"],
+      "internal_margin_target": "MOCK-NEVER: meta de margem interna."
+    },
+    {
+      "product_id": "PROD-CPR-02",
+      "name": "CPR Financeira Soja (mock)",
+      "purpose": "custeio",
+      "min_amount": 5000000,
+      "max_amount": 60000000,
+      "tenor_months_min": 8,
+      "tenor_months_max": 18,
+      "amortization_options": ["bullet_post_harvest"],
+      "guarantee_options": ["cpr_financeira", "alienacao_fiduciaria_graos", "cessao_contratos_venda"],
+      "conditions": ["contratos_de_venda_ou_hedge", "monitoramento_de_safra"],
+      "rate_note": "Taxa indicativa mock.",
+      "eligibility_criteria": ["produtor_rural_ativo", "historico_de_comercializacao"],
+      "required_documents": ["matricula_ou_arrendamento", "plano_de_plantio", "contratos_de_venda"],
+      "internal_margin_target": "MOCK-NEVER."
+    },
+    {
+      "product_id": "PROD-CUSTEIO-TRANCHE-03",
+      "name": "Custeio em Tranches com Gatilhos (mock)",
+      "purpose": "custeio",
+      "min_amount": 10000000,
+      "max_amount": 100000000,
+      "tenor_months_min": 10,
+      "tenor_months_max": 16,
+      "amortization_options": ["two_installments_post_harvest", "three_installments_post_harvest"],
+      "guarantee_options": ["penhor_safra", "cpr_financeira", "hipoteca_rural", "aval_socios"],
+      "conditions": ["liberacao_por_tranche", "gatilho_de_produtividade_ou_preco", "seguro_agricola_obrigatorio"],
+      "rate_note": "Taxa indicativa mock.",
+      "eligibility_criteria": ["produtor_rural_ativo", "area_plantada_comprovada", "historico_produtivo_3_safras"],
+      "required_documents": ["matricula_ou_arrendamento", "plano_de_plantio", "demonstracoes_financeiras", "historico_produtividade"],
+      "internal_margin_target": "MOCK-NEVER."
+    }
+  ]
+}

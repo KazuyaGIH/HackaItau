@@ -1,0 +1,19 @@
+{
+  "agent_id": "agro_eligibility",
+  "name": "Agro Eligibility Agent",
+  "version": "0.1.0",
+  "description": "Gate: verifica elegibilidade e completude documental para crédito rural antes de qualquer análise de risco.",
+  "capabilities": ["agro_eligibility_check"],
+  "tools": ["get_client_profile", "get_agro_profile", "get_available_documents", "search_policy"],
+  "allowed_data_domains": ["client_profile", "agro_profile", "documents", "knowledge"],
+  "required_data": [
+    { "tool": "get_client_profile", "params_from": { "client_id": "scope.client_id" } },
+    { "tool": "get_agro_profile", "params_from": { "client_id": "scope.client_id" } },
+    { "tool": "get_available_documents", "params_from": { "client_id": "scope.client_id" } },
+    { "tool": "search_policy", "params": { "query": "elegibilidade custeio documentos obrigatórios", "top_k": 3 } }
+  ],
+  "depends_on": [],
+  "forbidden_actions": ["approve_credit", "reject_credit", "estimate_repayment_capacity", "propose_structure"],
+  "output_schema": "EligibilityOutput",
+  "playbook_path": "agents/eligibility/playbook.md"
+}

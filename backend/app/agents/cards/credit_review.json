@@ -1,0 +1,16 @@
+{
+  "agent_id": "credit_review",
+  "name": "Credit Review / Red Team Agent",
+  "version": "0.1.0",
+  "description": "Revisão crítica: validators determinísticos (código) + red team qualitativo (LLM) sobre os outputs compactos dos demais agentes. Não acessa dados brutos.",
+  "capabilities": ["credit_review"],
+  "tools": ["search_policy"],
+  "allowed_data_domains": ["knowledge"],
+  "required_data": [
+    { "tool": "search_policy", "params": { "query": "premissas produtividade histórica revisão", "top_k": 3 } }
+  ],
+  "depends_on": ["agro_eligibility", "agro_credit_risk", "agro_structuring"],
+  "forbidden_actions": ["approve_credit", "reject_credit", "rewrite_outputs", "invent_evidence"],
+  "output_schema": "AIReviewOutput",
+  "playbook_path": "agents/review/playbook.md"
+}

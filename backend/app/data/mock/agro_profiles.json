@@ -1,0 +1,37 @@
+{
+  "_meta": { "mock": true, "units": { "productivity": "sacas/ha", "cost_per_hectare": "BRL/ha" } },
+  "records": [
+    {
+      "client_id": "CLIENTE-001",
+      "crop": "soja",
+      "planted_area_hectares": 42000,
+      "expected_productivity": 61,
+      "historical_productivity": 58,
+      "historical_productivity_series": [
+        { "cycle": "2022/23", "productivity": 57 },
+        { "cycle": "2023/24", "productivity": 59 },
+        { "cycle": "2024/25", "productivity": 58 }
+      ],
+      "cost_per_hectare": 6300,
+      "production_cycle": "2026/27",
+      "region": "Mato Grosso",
+      "irrigation": "none",
+      "land_tenure": "owned_and_leased",
+      "field_agent_notes": "MOCK-NEVER: observação de campo confidencial — não deve chegar ao agente."
+    },
+    {
+      "client_id": "CLIENTE-999",
+      "crop": "milho",
+      "planted_area_hectares": 9000,
+      "expected_productivity": 110,
+      "historical_productivity": 104,
+      "historical_productivity_series": [],
+      "cost_per_hectare": 5200,
+      "production_cycle": "2026/27",
+      "region": "Goiás",
+      "irrigation": "partial",
+      "land_tenure": "leased",
+      "field_agent_notes": "MOCK-NEVER: fora do escopo."
+    }
+  ]
+}

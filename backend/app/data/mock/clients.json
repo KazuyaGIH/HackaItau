@@ -1,0 +1,29 @@
+{
+  "_meta": { "mock": true, "note": "Empresas fictícias. Campos sensíveis (tax_id, internal_rating_notes, relationship_manager_phone) existem para demonstrar filtragem `never`." },
+  "records": [
+    {
+      "client_id": "CLIENTE-001",
+      "name": "Fazenda Horizonte S.A.",
+      "sector": "Agronegócio",
+      "region": "Mato Grosso",
+      "main_crop": "soja",
+      "segment": "large_corporate_agro",
+      "relationship_since": "2016-03-01",
+      "tax_id": "00.000.000/0001-00",
+      "internal_rating_notes": "MOCK-NEVER: nota interna de rating — não deve aparecer em nenhum output.",
+      "relationship_manager_phone": "+55 00 0000-0000"
+    },
+    {
+      "client_id": "CLIENTE-999",
+      "name": "Agro Delta Ltda.",
+      "sector": "Agronegócio",
+      "region": "Goiás",
+      "main_crop": "milho",
+      "segment": "middle_market_agro",
+      "relationship_since": "2020-08-15",
+      "tax_id": "99.999.999/0001-99",
+      "internal_rating_notes": "MOCK-NEVER: cliente fora do escopo de qualquer case da demo.",
+      "relationship_manager_phone": "+55 99 9999-9999"
+    }
+  ]
+}

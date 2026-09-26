@@ -1,0 +1,24 @@
+{
+  "agent_id": "agro_structuring",
+  "name": "Agro Structuring Agent",
+  "version": "0.1.0",
+  "description": "Propõe 2–3 alternativas comparáveis de estrutura a partir do Risk Output compacto e do catálogo. Não acessa financials, agro profile nem documentos brutos.",
+  "capabilities": ["agro_credit_structuring"],
+  "tools": ["get_product_catalog", "search_policy"],
+  "allowed_data_domains": ["product_catalog", "knowledge"],
+  "required_data": [
+    { "tool": "get_product_catalog", "params_from": { "purpose": "task.inputs.purpose" } },
+    { "tool": "search_policy", "params": { "query": "garantias condicionantes custeio", "top_k": 3 } }
+  ],
+  "depends_on": ["agro_eligibility", "agro_credit_risk"],
+  "forbidden_actions": [
+    "approve_credit",
+    "reject_credit",
+    "rank_alternatives",
+    "mark_preferred_alternative",
+    "read_client_financials",
+    "recompute_metrics"
+  ],
+  "output_schema": "StructuringOutput",
+  "playbook_path": "agents/structuring/playbook.md"
+}

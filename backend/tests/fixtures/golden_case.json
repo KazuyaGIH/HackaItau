@@ -1,0 +1,18 @@
+{
+  "_meta": { "mock": true, "note": "Caso de referência da demo. Usado por testes e pelo ScriptedFallback (S2.3)." },
+  "user_id": "analyst-001",
+  "prompt": "O cliente Fazenda Horizonte S.A. solicita R$ 50 milhões para custeio da safra de soja 2026/27. Analise a operação e proponha uma estrutura.",
+  "expected": {
+    "client_id": "CLIENTE-001",
+    "requested_amount": 50000000,
+    "purpose": "custeio",
+    "crop": "soja",
+    "cycle": "2026/27",
+    "agro": { "planted_area_hectares": 42000, "expected_productivity": 61, "historical_productivity": 58, "cost_per_hectare": 6300 },
+    "market": { "reference_price": 135 },
+    "out_of_scope_client_id": "CLIENTE-999",
+    "adversarial_doc_id": "DOC-ADV-001",
+    "rework_finding_code": "ASSUMPTION_ABOVE_BASELINE_UNJUSTIFIED",
+    "final_decision_status": "ready_for_human_review"
+  }
+}
