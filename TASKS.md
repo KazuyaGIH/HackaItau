@@ -16,7 +16,7 @@ Regra de ordem: **T0 (kernel) merge primeiro**; depois S1–S5 em paralelo contr
 | LLM | 1 provider OpenAI-compatible via `httpx` (chat completions + `response_format=json_object`) | `.env`: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `DEMO_MODE=true`. Nenhum SDK pesado |
 | Dados / conhecimento | JSON em `backend/app/data/mock/`, markdown em `backend/app/knowledge/corpus/` | sem DB, sem vector store |
 | Estado | dict em memória | sem Redis, sem fila |
-| Execução local | `uvicorn app.main:app --reload` + `npm run dev` (dev) / `npm run build` servido pelo FastAPI (demo) | um processo na demo |
+| Execução local | `make install` → `make run` (demo: build + FastAPI servindo tudo em :8000) ou `make dev` (vite + uvicorn --reload, um terminal) | `Makefile` na raiz; `make test` roda pytest/ruff/build/lint |
 | Lint/format | `ruff` (backend), `eslint`+`prettier` default do Vite (frontend) | opcional; não bloqueia merge |
 | Deploy | **nenhum em P0** | P1: Dockerfile único + Render/Fly |
 | Segredos | só `.env` local (gitignored) + `.env.example` commitado | `config.py` é o único leitor |
