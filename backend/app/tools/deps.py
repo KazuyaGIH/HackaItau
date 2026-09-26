@@ -10,3 +10,5 @@ class ToolDeps:
     repo: DataRepository
     knowledge: KnowledgeRetriever
     scenario_tags: tuple[str, ...] = field(default=())  # ex.: ("adversarial",) via demo_options
+    agent_id: str = ""  # quem está executando (para CALC-* computed_by_agent)
+    round: int = 1  # rodada do task (CALC-*-R<n>)

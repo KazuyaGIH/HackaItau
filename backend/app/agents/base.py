@@ -1,12 +1,19 @@
-"""Protocolo de agente (ARCHITECTURE.md §5). Runtime comum em agents/runtime.py (S2.2)."""
+"""Protocolo de agente (ARCHITECTURE.md §5) + BaseAgent com gather/build_prompt padrão.
+
+Runtime comum em agents/runtime.py. Um agente concreto sobrescreve só o que precisa.
+"""
 
 from typing import Any, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.core.schemas.agent import AgentCard, AgentResult, TaskSpec
+from app.config import APP_DIR
+from app.core.schemas.agent import AgentCard, Assumption, TaskSpec, ToolCallSpec
 from app.core.schemas.context import ExecutionContext
 from app.core.schemas.evidence import EvidenceBundle
+from app.core.schemas.outputs import OUTPUT_SCHEMAS
+from app.core.schemas.tools import ToolResult
+from app.llm.prompting import UNTRUSTED_RULES, render_evidence, render_schema, wrap_untrusted
 from app.llm.provider import Message
 
 
@@ -22,7 +29,16 @@ class PromptParts(BaseModel):
 class ToolboxLike(Protocol):
     """Interface que o código do agente usa na fase gather. Implementação: tools/gateway.py (S1.6)."""
 
-    async def call(self, tool_name: str, **params: Any) -> Any: ...
+    async def call(self, tool_name: str, **params: Any) -> ToolResult: ...
+
+
+class ValidatedOutput(BaseModel):
+    """Retorno de Agent.validate. O runtime completa usage, output_id, evidence_ids e registra OUT-*."""
+
+    output: dict[str, Any]
+    assumptions: list[Assumption] = Field(default_factory=list)
+    calculation_ids: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class Agent(Protocol):
@@ -36,6 +52,84 @@ class Agent(Protocol):
 
     def validate(
         self, ctx: ExecutionContext, task: TaskSpec, raw_output: BaseModel, evidence: EvidenceBundle
-    ) -> AgentResult:
+    ) -> ValidatedOutput:
         """CÓDIGO. Grounding, campos materiais copiados de CALC-*, regras do agente."""
         ...
+
+
+def resolve_params(spec: ToolCallSpec, ctx: ExecutionContext, task: TaskSpec) -> dict[str, Any]:
+    """params_from: "scope.client_id" | "task.inputs.<campo>". Nunca lê do LLM."""
+    params = dict(spec.params)
+    for name, path in spec.params_from.items():
+        if path == "scope.client_id":
+            params[name] = ctx.case_scope.client_ids[0]
+        elif path.startswith("task.inputs."):
+            params[name] = task.inputs.get(path[len("task.inputs.") :])
+        else:
+            raise ValueError(f"params_from desconhecido: {path}")
+    return params
+
+
+async def gather_required_data(
+    card: AgentCard, ctx: ExecutionContext, task: TaskSpec, toolbox: ToolboxLike
+) -> EvidenceBundle:
+    bundle = EvidenceBundle()
+    for spec in card.required_data:
+        params = resolve_params(spec, ctx, task)
+        if any(v is None for v in params.values()):
+            bundle.denied.append(f"{spec.tool}:missing_param")
+            continue
+        result = await toolbox.call(spec.tool, **params)
+        if not result.ok:
+            bundle.denied.append(f"{spec.tool}:{result.reason}")
+            continue
+        bundle.sources.extend(result.sources)
+        if result.calculation is not None:
+            bundle.calculations.append(result.calculation)
+    return bundle
+
+
+class BaseAgent:
+    card: AgentCard
+
+    def __init__(self, card: AgentCard) -> None:
+        self.card = card
+        self._playbook = (APP_DIR / card.playbook_path).read_text(encoding="utf-8")
+
+    @property
+    def playbook(self) -> str:
+        return self._playbook
+
+    async def gather(self, ctx: ExecutionContext, task: TaskSpec, toolbox: ToolboxLike) -> EvidenceBundle:
+        return await gather_required_data(self.card, ctx, task, toolbox)
+
+    def build_prompt(self, ctx: ExecutionContext, task: TaskSpec, evidence: EvidenceBundle) -> PromptParts:
+        card = self.card
+        system = "\n\n".join(
+            [
+                f"# {card.name} (v{card.version})\n{card.description}",
+                "Ações proibidas: " + ", ".join(card.forbidden_actions) + ".",
+                self._playbook,
+                UNTRUSTED_RULES,
+            ]
+        )
+        sections = [f"## Tarefa\n{task.instruction}"]
+        if task.inputs:
+            sections.append("## Inputs (projeção de resultados anteriores)\n" + wrap_untrusted("task_inputs", task.inputs))
+        if task.rework is not None:
+            sections.append(
+                "## Rework solicitado pelo Review\n"
+                f"Ação requerida (backend): {task.rework.required_action} {task.rework.params}\n"
+                + wrap_untrusted("review_finding", task.rework.message)
+            )
+        sections.append("## Evidências disponíveis\n" + (render_evidence(evidence) or "(nenhuma)"))
+        sections.append(
+            "## Formato de saída\nResponda apenas com JSON válido conforme este schema:\n"
+            + render_schema(OUTPUT_SCHEMAS[card.output_schema])
+        )
+        return PromptParts(system=system, user="\n\n".join(sections), response_schema=card.output_schema)
+
+    def validate(
+        self, ctx: ExecutionContext, task: TaskSpec, raw_output: BaseModel, evidence: EvidenceBundle
+    ) -> ValidatedOutput:
+        return ValidatedOutput(output=raw_output.model_dump())

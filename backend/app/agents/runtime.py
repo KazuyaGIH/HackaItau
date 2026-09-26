@@ -1,0 +1,238 @@
+"""Runtime comum dos agentes (ARCHITECTURE.md §5): gather (código) → reason (1 chamada LLM, sem tools) → validate (código).
+
+O LLM só vê o EvidenceBundle; só o runtime cria OUT-*; IDs não fornecidos ao agente são removidos (GROUNDING_REJECTED).
+"""
+
+import time
+from typing import Any
+
+from pydantic import BaseModel, ValidationError
+
+from app.agents.base import Agent, PromptParts
+from app.core.events import EventLog
+from app.core.evidence import EvidenceRegistry
+from app.core.schemas.agent import AgentResult, LLMUsage, TaskSpec
+from app.core.schemas.context import ExecutionContext
+from app.core.schemas.events import EventType
+from app.core.schemas.evidence import AgentOutputRecord, EvidenceBundle, output_id
+from app.core.schemas.outputs import OUTPUT_SCHEMAS
+from app.llm.openai_compat import LLMError
+from app.llm.prompting import extract_json
+from app.llm.provider import LLMProvider, Message
+from app.llm.scripted_fallback import ScriptedFallback
+from app.tools.gateway import Toolbox
+
+GROUNDED_KEYS = ("evidence_ids", "calculation_ids")
+
+
+class AgentExecutionError(Exception):
+    def __init__(self, agent_id: str, reason: str) -> None:
+        super().__init__(f"{agent_id}: {reason}")
+        self.agent_id = agent_id
+        self.reason = reason
+
+
+def ground(obj: Any, allowed: set[str]) -> tuple[Any, list[str]]:
+    """Remove recursivamente IDs em evidence_ids/calculation_ids que o agente não recebeu."""
+    rejected: list[str] = []
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            out = {}
+            for k, v in node.items():
+                if k in GROUNDED_KEYS and isinstance(v, list):
+                    kept = [i for i in v if isinstance(i, str) and i in allowed]
+                    rejected.extend(i for i in v if i not in kept)
+                    out[k] = kept
+                else:
+                    out[k] = walk(v)
+            return out
+        if isinstance(node, list):
+            return [walk(i) for i in node]
+        return node
+
+    return walk(obj), rejected
+
+
+def collect_ids(obj: Any) -> list[str]:
+    ids: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k in GROUNDED_KEYS and isinstance(v, list):
+                    ids.extend(i for i in v if isinstance(i, str))
+                else:
+                    walk(v)
+        elif isinstance(node, list):
+            for i in node:
+                walk(i)
+
+    walk(obj)
+    return list(dict.fromkeys(ids))
+
+
+class AgentRuntime:
+    def __init__(
+        self,
+        provider: LLMProvider | None,
+        model: str,
+        *,
+        fallback_enabled: bool,
+        fallback: ScriptedFallback | None = None,
+    ) -> None:
+        self.provider = provider
+        self.model = model
+        self.fallback_enabled = fallback_enabled
+        self.fallback = fallback or ScriptedFallback()
+
+    async def run(
+        self,
+        agent: Agent,
+        ctx: ExecutionContext,
+        task: TaskSpec,
+        toolbox: Toolbox,
+        events: EventLog,
+        evidence: EvidenceRegistry,
+    ) -> AgentResult:
+        agent_id = agent.card.agent_id
+        events.emit(EventType.AGENT_STARTED, {"round": task.round}, agent_id=agent_id, task_id=task.task_id)
+
+        # 1. gather — código; cada tool call autorizada/filtrada/auditada no Gateway
+        tools_before = len(events.of_type(EventType.TOOL_CALLED))
+        bundle = await agent.gather(ctx, task, toolbox)
+        for oid in task.upstream_output_ids:
+            rec = evidence.get(oid)
+            if isinstance(rec, AgentOutputRecord):
+                bundle.upstream_outputs.append(rec)
+        tool_calls = len(events.of_type(EventType.TOOL_CALLED)) - tools_before
+
+        # 2. reason — uma chamada, sem tools
+        prompt = agent.build_prompt(ctx, task, bundle)
+        schema = OUTPUT_SCHEMAS[prompt.response_schema]
+        raw, usage = await self._reason(agent_id, task, prompt, schema, bundle, events)
+
+        # 3. validate — grounding + regras do agente
+        cleaned, rejected = ground(raw, bundle.allowed_ids())
+        if rejected:
+            events.emit(
+                EventType.GROUNDING_REJECTED,
+                {"rejected_ids": sorted(set(rejected))},
+                agent_id=agent_id,
+                task_id=task.task_id,
+            )
+        try:
+            model_out = schema.model_validate(cleaned)
+        except ValidationError as exc:
+            raise AgentExecutionError(agent_id, f"output inválido após grounding: {exc.error_count()} erro(s)") from exc
+
+        validated = agent.validate(ctx, task, model_out, bundle)
+        out_id = output_id(agent_id, task.round)
+        evidence.register(AgentOutputRecord(id=out_id, agent_id=agent_id, round=task.round, output=validated.output))
+
+        result = AgentResult(
+            agent_id=agent_id,
+            task_id=task.task_id,
+            round=task.round,
+            output=validated.output,
+            output_id=out_id,
+            evidence_ids=collect_ids(validated.output),
+            calculation_ids=list(dict.fromkeys(validated.calculation_ids + [c.id for c in bundle.calculations])),
+            assumptions=validated.assumptions,
+            usage=usage,
+            warnings=validated.warnings + ([f"grounding_rejected:{len(rejected)}"] if rejected else []),
+            data_domains_accessed=sorted({s.resource_domain for s in bundle.sources}),
+            tool_calls=tool_calls,
+        )
+        events.emit(
+            EventType.AGENT_COMPLETED,
+            {
+                "round": task.round,
+                "output_id": out_id,
+                "fallback_used": usage.fallback_used,
+                "warnings": result.warnings,
+                "tool_calls": tool_calls,
+                "data_domains_accessed": result.data_domains_accessed,
+            },
+            agent_id=agent_id,
+            task_id=task.task_id,
+        )
+        return result
+
+    # ------------------------------------------------------------------ reason
+
+    async def _reason(
+        self,
+        agent_id: str,
+        task: TaskSpec,
+        prompt: PromptParts,
+        schema: type[BaseModel],
+        bundle: EvidenceBundle,
+        events: EventLog,
+    ) -> tuple[dict[str, Any], LLMUsage]:
+        if self.provider is None:
+            return self._fallback(agent_id, task, prompt, bundle, events, reason="llm_unconfigured")
+
+        messages = prompt.messages()
+        retries = 0
+        usage = LLMUsage(model=self.model)
+        for attempt in range(2):
+            started = time.monotonic()
+            try:
+                resp = await self.provider.complete(model=self.model, messages=messages, response_schema=schema)
+            except LLMError as exc:
+                events.emit(
+                    EventType.LLM_CALLED,
+                    {"ok": False, "error": str(exc), "attempt": attempt + 1},
+                    agent_id=agent_id,
+                    task_id=task.task_id,
+                )
+                return self._fallback(agent_id, task, prompt, bundle, events, reason=f"provider_error:{exc}")
+            usage = LLMUsage(
+                model=resp.usage.model,
+                tokens_in=usage.tokens_in + resp.usage.tokens_in,
+                tokens_out=usage.tokens_out + resp.usage.tokens_out,
+                latency_ms=usage.latency_ms + (resp.usage.latency_ms or int((time.monotonic() - started) * 1000)),
+                retries=retries,
+            )
+            events.emit(
+                EventType.LLM_CALLED,
+                {"ok": True, "attempt": attempt + 1, "usage": resp.usage.model_dump()},
+                agent_id=agent_id,
+                task_id=task.task_id,
+            )
+            try:
+                obj = extract_json(resp.content or "")
+                schema.model_validate(obj)  # só valida estrutura; grounding acontece no runtime
+                return obj, usage
+            except (ValueError, ValidationError) as exc:
+                retries += 1
+                messages = messages + [
+                    Message(role="assistant", content=resp.content or ""),
+                    Message(
+                        role="user",
+                        content=f"Sua resposta falhou na validação do schema: {_short(str(exc))}. "
+                        "Devolva SOMENTE o JSON corrigido, conforme o schema.",
+                    ),
+                ]
+        return self._fallback(agent_id, task, prompt, bundle, events, reason="schema_validation_failed_after_retry")
+
+    def _fallback(
+        self,
+        agent_id: str,
+        task: TaskSpec,
+        prompt: PromptParts,
+        bundle: EvidenceBundle,
+        events: EventLog,
+        *,
+        reason: str,
+    ) -> tuple[dict[str, Any], LLMUsage]:
+        if not self.fallback_enabled:
+            raise AgentExecutionError(agent_id, f"LLM indisponível ({reason}) e fallback desabilitado")
+        events.emit(EventType.LLM_FALLBACK_USED, {"reason": reason}, agent_id=agent_id, task_id=task.task_id)
+        obj = self.fallback.produce(prompt.response_schema, task, bundle)
+        return obj, LLMUsage(model="scripted-fallback", fallback_used=True)
+
+
+def _short(text: str, limit: int = 600) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
