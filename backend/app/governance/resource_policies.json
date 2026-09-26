@@ -1,0 +1,101 @@
+{
+  "_meta": {
+    "mock": true,
+    "note": "row_scope: case_client = registros só do(s) client_id(s) do CaseScope; none = dado global. fields: projeção por agent_id ('*' = qualquer agente); sem entrada = deny por omissão. never: sempre removido antes da projeção e checado pelo Output Guard."
+  },
+  "client_profile": {
+    "row_scope": "case_client",
+    "fields": {
+      "*": ["client_id", "name", "sector", "region", "main_crop", "segment", "relationship_since"]
+    },
+    "never": ["tax_id", "internal_rating_notes", "relationship_manager_phone"]
+  },
+  "client_financials": {
+    "row_scope": "case_client",
+    "fields": {
+      "agro_credit_risk": [
+        "client_id",
+        "fiscal_year",
+        "revenue",
+        "ebitda",
+        "cash",
+        "gross_debt",
+        "net_debt",
+        "short_term_debt",
+        "currency"
+      ]
+    },
+    "never": ["internal_rating_notes", "tax_id", "relationship_manager_phone"]
+  },
+  "agro_profile": {
+    "row_scope": "case_client",
+    "fields": {
+      "agro_eligibility": ["client_id", "crop", "planted_area_hectares", "production_cycle", "region", "land_tenure"],
+      "agro_credit_risk": [
+        "client_id",
+        "crop",
+        "planted_area_hectares",
+        "expected_productivity",
+        "historical_productivity",
+        "historical_productivity_series",
+        "cost_per_hectare",
+        "production_cycle",
+        "region",
+        "irrigation",
+        "land_tenure"
+      ]
+    },
+    "never": ["field_agent_notes"]
+  },
+  "market_data": {
+    "row_scope": "none",
+    "fields": {
+      "agro_credit_risk": ["commodity", "reference_price", "unit", "currency", "price_date", "trend_note", "volatility_note"]
+    },
+    "never": ["trader_desk_notes"]
+  },
+  "documents": {
+    "row_scope": "case_client",
+    "fields": {
+      "agro_eligibility": ["doc_id", "client_id", "type", "title", "issued_at", "extracted", "content"],
+      "agro_credit_risk": ["doc_id", "client_id", "type", "title", "issued_at", "extracted", "content"]
+    },
+    "never": ["storage_path", "uploaded_by_email"]
+  },
+  "knowledge": {
+    "row_scope": "none",
+    "fields": { "*": ["doc_id", "chunk_index", "title", "text", "score"] },
+    "never": []
+  },
+  "product_catalog": {
+    "row_scope": "none",
+    "fields": {
+      "agro_eligibility": ["product_id", "name", "purpose", "eligibility_criteria", "required_documents"],
+      "agro_structuring": [
+        "product_id",
+        "name",
+        "purpose",
+        "min_amount",
+        "max_amount",
+        "tenor_months_min",
+        "tenor_months_max",
+        "amortization_options",
+        "guarantee_options",
+        "conditions",
+        "rate_note",
+        "eligibility_criteria"
+      ]
+    },
+    "never": ["internal_margin_target"]
+  },
+  "calculations": {
+    "row_scope": "case_client",
+    "fields": { "agro_credit_risk": ["*"] },
+    "never": []
+  },
+  "historical_cases": {
+    "row_scope": "none",
+    "fields": {},
+    "never": ["client_id", "client_name"]
+  }
+}

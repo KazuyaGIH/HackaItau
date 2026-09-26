@@ -1,0 +1,34 @@
+{
+  "_meta": { "mock": true, "note": "Identidades fictícias. P1: IAM real (ARCHITECTURE.md §22)." },
+  "users": [
+    {
+      "user_id": "analyst-001",
+      "name": "Analista de Crédito Agro",
+      "role": "credit_analyst",
+      "permissions_read": [
+        "client_profile",
+        "client_financials",
+        "agro_profile",
+        "market_data",
+        "documents",
+        "knowledge",
+        "product_catalog",
+        "calculations"
+      ]
+    },
+    {
+      "user_id": "manager-001",
+      "name": "Gerente Comercial Agro",
+      "role": "relationship_manager",
+      "permissions_read": [
+        "client_profile",
+        "agro_profile",
+        "market_data",
+        "documents",
+        "knowledge",
+        "product_catalog",
+        "calculations"
+      ]
+    }
+  ]
+}

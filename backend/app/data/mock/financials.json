@@ -1,0 +1,33 @@
+{
+  "_meta": { "mock": true, "currency": "BRL" },
+  "records": [
+    {
+      "client_id": "CLIENTE-001",
+      "fiscal_year": 2025,
+      "currency": "BRL",
+      "revenue": 320000000,
+      "ebitda": 70000000,
+      "cash": 30000000,
+      "gross_debt": 226000000,
+      "net_debt": 196000000,
+      "short_term_debt": 61000000,
+      "tax_id": "00.000.000/0001-00",
+      "internal_rating_notes": "MOCK-NEVER: rating interno B+ em revisão — confidencial.",
+      "relationship_manager_phone": "+55 00 0000-0000"
+    },
+    {
+      "client_id": "CLIENTE-999",
+      "fiscal_year": 2025,
+      "currency": "BRL",
+      "revenue": 95000000,
+      "ebitda": 12000000,
+      "cash": 4000000,
+      "gross_debt": 80000000,
+      "net_debt": 76000000,
+      "short_term_debt": 35000000,
+      "tax_id": "99.999.999/0001-99",
+      "internal_rating_notes": "MOCK-NEVER: fora do escopo.",
+      "relationship_manager_phone": "+55 99 9999-9999"
+    }
+  ]
+}

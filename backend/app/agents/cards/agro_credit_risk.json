@@ -1,0 +1,33 @@
+{
+  "agent_id": "agro_credit_risk",
+  "name": "Agro Credit Risk Agent",
+  "version": "0.1.0",
+  "description": "Interpreta métricas e cenários de stress calculados por código; identifica riscos, mitigantes, premissas qualitativas e incertezas. Não define números.",
+  "capabilities": ["agro_credit_risk_analysis"],
+  "tools": [
+    "get_client_financials",
+    "get_agro_profile",
+    "get_market_data",
+    "search_policy",
+    "calculate_credit_metrics",
+    "run_stress_scenarios"
+  ],
+  "allowed_data_domains": ["client_financials", "agro_profile", "market_data", "knowledge", "calculations"],
+  "required_data": [
+    { "tool": "get_client_financials", "params_from": { "client_id": "scope.client_id" } },
+    { "tool": "get_agro_profile", "params_from": { "client_id": "scope.client_id" } },
+    { "tool": "get_market_data", "params_from": { "commodity": "task.inputs.crop" } },
+    { "tool": "search_policy", "params": { "query": "alavancagem cobertura custeio limites", "top_k": 3 } }
+  ],
+  "depends_on": ["agro_eligibility"],
+  "forbidden_actions": [
+    "approve_credit",
+    "reject_credit",
+    "choose_numeric_assumptions",
+    "define_stress_scenarios",
+    "define_thresholds",
+    "propose_structure"
+  ],
+  "output_schema": "RiskLLMOutput",
+  "playbook_path": "agents/risk/playbook.md"
+}

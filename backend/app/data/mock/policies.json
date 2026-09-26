@@ -1,0 +1,32 @@
+{
+  "_meta": { "mock": true, "note": "Thresholds e cenários FIXOS usados pelo código (calculations/, risk/baseline.py). Referenciados no relatório via KB-POL-CRED-002." },
+  "thresholds": {
+    "source_doc_id": "POL-CRED-002",
+    "net_debt_ebitda_max": 3.0,
+    "pro_forma_leverage_max": 3.5,
+    "coverage": {
+      "comfortable_min": 1.5,
+      "reduced_buffer_min": 1.2,
+      "attention_required_min": 1.0
+    },
+    "repayment_capacity": {
+      "adequate_min_coverage": 1.5,
+      "adequate_with_conditions_min_coverage": 1.2,
+      "tight_min_coverage": 1.0
+    }
+  },
+  "stress_scenarios": [
+    { "scenario_id": "base", "label": "Base", "shocks": {} },
+    { "scenario_id": "price_minus_15pct", "label": "Preço da commodity −15%", "shocks": { "price": -0.15 } },
+    { "scenario_id": "productivity_minus_10pct", "label": "Produtividade −10%", "shocks": { "productivity": -0.10 } },
+    { "scenario_id": "combined", "label": "Preço −15% e produtividade −10%", "shocks": { "price": -0.15, "productivity": -0.10 } }
+  ],
+  "eligibility": {
+    "source_doc_id": "POL-AGRO-001",
+    "required_documents_by_purpose": {
+      "custeio": ["matricula_ou_arrendamento", "plano_de_plantio", "demonstracoes_financeiras"]
+    },
+    "required_fields": ["crop", "planted_area_hectares", "production_cycle"],
+    "area_mismatch_tolerance_pct": 0.05
+  }
+}

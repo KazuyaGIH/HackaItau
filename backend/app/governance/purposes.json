@@ -1,0 +1,18 @@
+{
+  "_meta": { "mock": true, "note": "Purpose → domínios permitidos. Interseção com user/agent/scope/resource_policy." },
+  "purposes": {
+    "credit_analysis_agro": {
+      "description": "Análise e estruturação de crédito rural para o cliente do case.",
+      "allowed_data_domains": [
+        "client_profile",
+        "client_financials",
+        "agro_profile",
+        "market_data",
+        "documents",
+        "knowledge",
+        "product_catalog",
+        "calculations"
+      ]
+    }
+  }
+}

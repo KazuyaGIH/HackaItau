@@ -1,0 +1,25 @@
+{
+  "_meta": { "mock": true, "note": "Preços fictícios; não usar como referência de mercado." },
+  "records": [
+    {
+      "commodity": "soja",
+      "reference_price": 135,
+      "unit": "BRL/saca",
+      "currency": "BRL",
+      "price_date": "2026-09-01",
+      "volatility_note": "medium",
+      "trend_note": "Preço fictício lateral nos últimos 6 meses; sensível a câmbio e oferta externa (mock).",
+      "trader_desk_notes": "MOCK-NEVER: visão proprietária da mesa — confidencial."
+    },
+    {
+      "commodity": "milho",
+      "reference_price": 62,
+      "unit": "BRL/saca",
+      "currency": "BRL",
+      "price_date": "2026-09-01",
+      "volatility_note": "high",
+      "trend_note": "Mock.",
+      "trader_desk_notes": "MOCK-NEVER."
+    }
+  ]
+}
