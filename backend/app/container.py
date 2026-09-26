@@ -59,7 +59,9 @@ def build_container(settings: Settings | None = None) -> Container:
     resolver = BootstrapClientResolver(repo)
     agents = AgentRegistry()
     runtime = AgentRuntime(build_provider(s), s.llm_model, fallback_enabled=s.llm_fallback_enabled)
-    orchestrator = Orchestrator(store, resolver, llm_mode(s))
+    orchestrator = Orchestrator(
+        store, resolver, s, agents=agents, runtime=runtime, repo=repo, knowledge=knowledge, llm_mode=llm_mode(s)
+    )
     return Container(s, store, repo, knowledge, resolver, agents, runtime, orchestrator)
 
 

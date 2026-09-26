@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.container import Container, get_container, llm_mode
 from app.core.schemas.case import CaseState, CreateCaseRequest, HumanReviewRequest, InputRequest
 from app.core.schemas.events import Event
+from app.core.schemas.evidence import AgentOutputRecord, CalculationRecord, SourceRecord
+from app.core.schemas.report import Report
 from app.orchestration.orchestrator import OrchestratorError
 
 router = APIRouter()
@@ -23,9 +25,9 @@ def health(c: Deps) -> dict:
 
 
 @router.post("/cases", response_model=CaseState, status_code=201)
-def create_case(body: CreateCaseRequest, c: Deps) -> CaseState:
+async def create_case(body: CreateCaseRequest, c: Deps) -> CaseState:
     try:
-        return c.orchestrator.create_case(body.user_id, body.prompt, body.demo_options).state
+        return (await c.orchestrator.create_case(body.user_id, body.prompt, body.demo_options)).state
     except OrchestratorError as exc:
         raise _handle(exc) from exc
 
@@ -54,12 +56,38 @@ def provide_input(case_id: str, body: InputRequest, c: Deps) -> CaseState:
         raise _handle(exc) from exc
 
 
-@router.post("/cases/{case_id}/run", response_model=CaseState)
+@router.post("/cases/{case_id}/run", response_model=CaseState, status_code=202)
 async def run_case(case_id: str, c: Deps) -> CaseState:
+    """Dispara a execução em background; acompanhe por GET /cases/{id} e /events."""
     try:
-        return (await c.orchestrator.run(case_id)).state
+        return c.orchestrator.start_run(case_id).state
     except OrchestratorError as exc:
         raise _handle(exc) from exc
+
+
+@router.get("/cases/{case_id}/report", response_model=Report)
+def get_report(case_id: str, c: Deps) -> Report:
+    try:
+        report = c.orchestrator.get(case_id).state.report
+    except OrchestratorError as exc:
+        raise _handle(exc) from exc
+    if report is None:
+        raise HTTPException(
+            status_code=409, detail={"code": "report_not_ready", "message": "relatório ainda não consolidado"}
+        )
+    return report
+
+
+@router.get("/cases/{case_id}/evidence/{evidence_id}", response_model=SourceRecord | CalculationRecord | AgentOutputRecord)
+def get_evidence(case_id: str, evidence_id: str, c: Deps) -> SourceRecord | CalculationRecord | AgentOutputRecord:
+    """Payload por trás de um source/calculation/output ID citado no relatório (já filtrado pelo Gateway)."""
+    try:
+        item = c.orchestrator.get(case_id).evidence.get(evidence_id)
+    except OrchestratorError as exc:
+        raise _handle(exc) from exc
+    if item is None:
+        raise HTTPException(status_code=404, detail={"code": "evidence_not_found", "message": evidence_id})
+    return item
 
 
 @router.post("/cases/{case_id}/human-review", response_model=CaseState)

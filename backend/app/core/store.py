@@ -1,8 +1,10 @@
 """CaseStore em memória (TASKS.md: estado inicial = dicionário). Um CaseRecord agrupa estado, eventos e evidências."""
 
+import asyncio
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 from app.core.events import EventLog
 from app.core.evidence import EvidenceRegistry
@@ -14,6 +16,8 @@ class CaseRecord:
     state: CaseState
     events: EventLog
     evidence: EvidenceRegistry = field(default_factory=EvidenceRegistry)
+    answers: dict[str, Any] = field(default_factory=dict)  # respostas do usuário após scope congelado (UNTRUSTED)
+    run_task: asyncio.Task[None] | None = field(default=None, repr=False)
 
     def touch(self) -> None:
         self.state.updated_at = datetime.now(timezone.utc)

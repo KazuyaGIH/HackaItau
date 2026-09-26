@@ -48,11 +48,15 @@ def test_unresolved_client_waits_for_input_then_freezes(client):
     assert client.get(f"/api/cases/{cid}").json()["scope"]["client_ids"] == ["CLIENTE-001"]
 
 
-def test_run_not_available_before_s3_but_state_guarded(client):
+def test_run_is_async_and_state_guarded(client):
     r = client.post("/api/cases", json={"user_id": "analyst-001", "prompt": PROMPT})
     cid = r.json()["case_id"]
-    assert client.post(f"/api/cases/{cid}/run").status_code == 501
-    assert client.post(f"/api/cases/{cid}/human-review", json={"decision": "approve_next_step"}).status_code == 409
+    assert client.get(f"/api/cases/{cid}/report").status_code == 409  # sem relatório antes de rodar
+    r = client.post(f"/api/cases/{cid}/run")
+    assert r.status_code == 202 and r.json()["status"] in ("running", "failed", "human_review_required")
+    assert client.post(f"/api/cases/{cid}/run").status_code == 409  # não roda duas vezes
+    if client.get(f"/api/cases/{cid}").json()["status"] != "human_review_required":
+        assert client.post(f"/api/cases/{cid}/human-review", json={"decision": "approve_next_step"}).status_code == 409
 
 
 def test_unknown_user_and_case(client):
