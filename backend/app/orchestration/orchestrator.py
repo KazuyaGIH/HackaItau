@@ -177,6 +177,8 @@ class Orchestrator:
             raise OrchestratorError("not_runnable", f"case em '{rec.state.status.value}' não pode ser executado")
         if rec.state.scope is None or rec.state.interpreted is None:
             raise OrchestratorError("scope_missing", "case sem CaseScope congelado", 500)
+        if self._runtime.provider is None:
+            raise OrchestratorError("llm_not_configured", "LLM não configurado: defina LLM_API_KEY no .env", 503)
         return rec
 
     async def _run_guarded(self, rec: CaseRecord) -> None:
@@ -448,7 +450,6 @@ class Orchestrator:
                     a.data_domains_accessed = list(result.data_domains_accessed)
                     a.tool_calls = result.tool_calls
                     a.source_count = len(result.evidence_ids)
-                    a.fallback_used = result.usage.fallback_used
                     a.denied_calls = len(
                         [e for e in rec.events.of_type(EventType.PERMISSION_DENIED) if e.agent_id == agent_id]
                     )

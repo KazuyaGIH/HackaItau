@@ -14,12 +14,11 @@ from app.core.evidence import EvidenceRegistry
 from app.core.schemas.agent import AgentResult, LLMUsage, TaskSpec
 from app.core.schemas.context import ExecutionContext
 from app.core.schemas.events import EventType
-from app.core.schemas.evidence import AgentOutputRecord, EvidenceBundle, output_id
+from app.core.schemas.evidence import AgentOutputRecord, output_id
 from app.core.schemas.outputs import OUTPUT_SCHEMAS
 from app.llm.openai_compat import LLMError
 from app.llm.prompting import extract_json
 from app.llm.provider import LLMProvider, Message
-from app.llm.scripted_fallback import ScriptedFallback
 from app.tools.gateway import Toolbox
 
 GROUNDED_KEYS = ("evidence_ids", "calculation_ids")
@@ -73,18 +72,9 @@ def collect_ids(obj: Any) -> list[str]:
 
 
 class AgentRuntime:
-    def __init__(
-        self,
-        provider: LLMProvider | None,
-        model: str,
-        *,
-        fallback_enabled: bool,
-        fallback: ScriptedFallback | None = None,
-    ) -> None:
+    def __init__(self, provider: LLMProvider | None, model: str) -> None:
         self.provider = provider
         self.model = model
-        self.fallback_enabled = fallback_enabled
-        self.fallback = fallback or ScriptedFallback()
 
     async def run(
         self,
@@ -110,7 +100,7 @@ class AgentRuntime:
         # 2. reason — uma chamada, sem tools
         prompt = agent.build_prompt(ctx, task, bundle)
         schema = OUTPUT_SCHEMAS[prompt.response_schema]
-        raw, usage = await self._reason(agent_id, task, prompt, schema, bundle, events)
+        raw, usage = await self._reason(agent_id, task, prompt, schema, events)
 
         # 3. validate — grounding + regras do agente
         cleaned, rejected = ground(raw, bundle.allowed_ids())
@@ -149,7 +139,6 @@ class AgentRuntime:
             {
                 "round": task.round,
                 "output_id": out_id,
-                "fallback_used": usage.fallback_used,
                 "warnings": result.warnings,
                 "tool_calls": tool_calls,
                 "data_domains_accessed": result.data_domains_accessed,
@@ -167,11 +156,10 @@ class AgentRuntime:
         task: TaskSpec,
         prompt: PromptParts,
         schema: type[BaseModel],
-        bundle: EvidenceBundle,
         events: EventLog,
     ) -> tuple[dict[str, Any], LLMUsage]:
         if self.provider is None:
-            return self._fallback(agent_id, task, prompt, bundle, events, reason="llm_unconfigured")
+            raise AgentExecutionError(agent_id, "llm_unconfigured: defina LLM_API_KEY no .env")
 
         messages = prompt.messages()
         retries = 0
@@ -187,7 +175,7 @@ class AgentRuntime:
                     agent_id=agent_id,
                     task_id=task.task_id,
                 )
-                return self._fallback(agent_id, task, prompt, bundle, events, reason=f"provider_error:{exc}")
+                raise AgentExecutionError(agent_id, f"provider_error: {exc}") from exc
             usage = LLMUsage(
                 model=resp.usage.model,
                 tokens_in=usage.tokens_in + resp.usage.tokens_in,
@@ -215,23 +203,7 @@ class AgentRuntime:
                         "Devolva SOMENTE o JSON corrigido, conforme o schema.",
                     ),
                 ]
-        return self._fallback(agent_id, task, prompt, bundle, events, reason="schema_validation_failed_after_retry")
-
-    def _fallback(
-        self,
-        agent_id: str,
-        task: TaskSpec,
-        prompt: PromptParts,
-        bundle: EvidenceBundle,
-        events: EventLog,
-        *,
-        reason: str,
-    ) -> tuple[dict[str, Any], LLMUsage]:
-        if not self.fallback_enabled:
-            raise AgentExecutionError(agent_id, f"LLM indisponível ({reason}) e fallback desabilitado")
-        events.emit(EventType.LLM_FALLBACK_USED, {"reason": reason}, agent_id=agent_id, task_id=task.task_id)
-        obj = self.fallback.produce(prompt.response_schema, task, bundle)
-        return obj, LLMUsage(model="scripted-fallback", fallback_used=True)
+        raise AgentExecutionError(agent_id, "schema_validation_failed_after_retry")
 
 
 def _short(text: str, limit: int = 600) -> str:

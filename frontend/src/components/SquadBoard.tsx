@@ -65,7 +65,6 @@ function AgentCard({ agent }: { agent: AgentCardState }) {
       <div className="muted small">
         rodada {agent.round} · {agent.tool_calls} tool calls · {agent.source_count} fontes ·{' '}
         {agent.denied_calls > 0 ? <b className="danger-text">{agent.denied_calls} negada(s)</b> : '0 negadas'}
-        {agent.fallback_used && <span className="tag warn">fallback</span>}
       </div>
       <div className="domains">
         {agent.data_domains_accessed.length === 0 && <span className="muted small">nenhum domínio acessado</span>}
@@ -249,14 +248,12 @@ function summarize(e: CaseEvent): string {
       const u = p.usage as { model?: string; tokens_in?: number; tokens_out?: number; latency_ms?: number } | undefined
       return u ? `${u.model ?? ''} in=${u.tokens_in ?? 0} out=${u.tokens_out ?? 0} ${u.latency_ms ?? 0}ms` : ''
     }
-    case 'LLM_FALLBACK_USED':
-      return `motivo: ${String(p.reason)}`
     case 'REVIEW_ISSUE_FOUND':
       return `${String(p.finding_id)} ${String(p.code)} [${String(p.severity)}]`
     case 'TASK_REOPENED':
       return `rodada ${String(p.round)} · ${(p.finding_ids as string[] | undefined)?.join(', ') ?? ''}`
     case 'AGENT_COMPLETED':
-      return `${String(p.output_id)} · ${String(p.tool_calls)} tool calls${p.fallback_used ? ' · fallback' : ''}`
+      return `${String(p.output_id)} · ${String(p.tool_calls)} tool calls`
     case 'SECURITY_EVENT':
       return `${String(p.kind)} ${String(p.source_id ?? '')}`
     case 'OUTPUT_GUARD_APPLIED':

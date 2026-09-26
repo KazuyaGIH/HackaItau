@@ -13,7 +13,7 @@ Regra de ordem: **T0 (kernel) merge primeiro**; depois S1–S5 em paralelo contr
 | Backend | Python 3.10+ (`X \| None` ok; sem `Self`/`except*`), FastAPI, pydantic v2, pydantic-settings, httpx, uvicorn | `backend/pyproject.toml`; gerenciar com `pip`/`venv` (ou `uv` se disponível) |
 | Testes backend | pytest, pytest-asyncio | sem cobertura, sem mutation, sem CI obrigatória |
 | Frontend | Node 20 LTS, Vite + React + TypeScript | sem router, sem state manager, sem UI kit pesado (CSS simples) |
-| LLM | 1 provider OpenAI-compatible via `httpx` (chat completions + `response_format=json_object`) | `.env`: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_FALLBACK_ENABLED=false`, `DEMO_MODE=true`. Nenhum SDK pesado |
+| LLM | 1 provider OpenAI-compatible via `httpx` (chat completions + `response_format=json_object`) | `.env`: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `DEMO_MODE=true`. Nenhum SDK pesado |
 | Dados / conhecimento | JSON em `backend/app/data/mock/`, markdown em `backend/app/knowledge/corpus/` | sem DB, sem vector store |
 | Estado | dict em memória | sem Redis, sem fila |
 | Execução local | `uvicorn app.main:app --reload` + `npm run dev` (dev) / `npm run build` servido pelo FastAPI (demo) | um processo na demo |
@@ -23,7 +23,7 @@ Regra de ordem: **T0 (kernel) merge primeiro**; depois S1–S5 em paralelo contr
 
 Não usar: Docker Compose, Postgres, Redis, Celery, LangChain/LangGraph, embeddings, SSE/WebSocket, OpenAPI codegen, Next.js.
 
-Pré-requisitos na máquina de quem coda: Python 3.10+, Node 20, uma `LLM_API_KEY` válida (sem ela o backend sobe com `LLM_FALLBACK_ENABLED=true` e a UI mostra o banner de fallback).
+Pré-requisitos na máquina de quem coda: Python 3.10+, Node 20, uma `LLM_API_KEY` válida (sem ela o backend sobe, `/api/health` reporta `llm_mode=unconfigured` e `POST /run` é recusado com 503 `llm_not_configured`; a UI mostra o aviso). Testes automatizados usam um provider stub em `tests/`.
 
 ---
 
@@ -63,8 +63,8 @@ Critério: `pytest` roda (mesmo que só import), `npm run build` passa, ninguém
 
 ## S2 — Agentes especialistas + cálculos + LLM — §5 §6.1–6.3 §13
 
-- [ ] S2.1 `llm/openai_compat.py`: `complete()` com json mode, timeout, checagem de secret nas mensagens, `LLMUsage`; `llm/scripted_fallback.py` (fixtures por `(agent_id, round)`, `fallback_used=True`); `llm/prompting.py` (`wrap_untrusted`, `render_schema`, retry 1× com erro de validação)
-- [ ] S2.2 `agents/runtime.py`: `gather (código) → reason (1 chamada, sem tools) → validate`; grounding (IDs existem **e** foram fornecidos ao agente); `GROUNDING_REJECTED`; registra `OUT-<agent>-R<n>`; `AGENT_STARTED/COMPLETED`, `LLM_CALLED`, `LLM_FALLBACK_USED`
+- [ ] S2.1 `llm/openai_compat.py`: `complete()` com json mode, timeout, checagem de secret nas mensagens, `LLMUsage`; `llm/prompting.py` (`wrap_untrusted`, `render_schema`, retry 1× com erro de validação)
+- [ ] S2.2 `agents/runtime.py`: `gather (código) → reason (1 chamada, sem tools) → validate`; grounding (IDs existem **e** foram fornecidos ao agente); `GROUNDING_REJECTED`; registra `OUT-<agent>-R<n>`; `AGENT_STARTED/COMPLETED`, `LLM_CALLED`; sem provider/erro de provider/schema inválido após retry → `AgentExecutionError` (auditável)
 - [ ] S2.3 `agents/registry.py` + carregamento dos cards; `gather` default executa `card.required_data` com `params_from` (`scope.client_id`, `task.inputs.crop`, …)
 - [ ] S2.4 `calculations/credit_metrics.py`, `calculations/stress.py` (puras; classificação por thresholds passados como parâmetro); `tools/calc_tools.py` registra `CALC-*` com inputs/fontes/thresholds `KB-*`
 - [ ] S2.5 `agents/eligibility/`: playbook, `validate` com lista de obrigatórios da policy → `blocked` por código; gate
@@ -84,7 +84,7 @@ Critério: `pytest` roda (mesmo que só import), `npm run build` passa, ninguém
 - [ ] S3.5 `orchestration/orchestrator.py`: state machine §4; bootstrap → `SCOPE_FROZEN`; `waiting_input` (resolver/gate); execução em `asyncio.Task`; rework 1× (owner + dependentes); `EXECUTION_FAILED`
 - [ ] S3.6 `orchestration/consolidator.py`: `Report` por template; números só de `CALC-*`; `governance` view (domínios por agente, denials, security events, `fields_hidden`); `human_gate`
 - [ ] S3.7 Human gate: `approve_next_step` → `CASE_COMPLETED` (`completed_demo`); `request_adjustment` → registra comentário no relatório
-- [ ] S3.8 Testes: `test_validators.py` (61 vs 58 → `ASSUMPTION_ABOVE_BASELINE_UNJUSTIFIED`; `CALC_INCONSISTENT`; `EVIDENCE_NOT_FOUND`; `RISK_IGNORED_BY_STRUCTURE`), `test_output_guard.py`, `test_orchestrator.py` com `ScriptedFallback` (gate bloqueia Risk; rework 1× e para; case não conclui sem `approve_next_step`; scope imutável)
+- [ ] S3.8 Testes: `test_validators.py` (61 vs 58 → `ASSUMPTION_ABOVE_BASELINE_UNJUSTIFIED`; `CALC_INCONSISTENT`; `EVIDENCE_NOT_FOUND`; `RISK_IGNORED_BY_STRUCTURE`), `test_output_guard.py`, `test_orchestrator.py` com provider stub de teste (gate bloqueia Risk; rework 1× e para; case não conclui sem `approve_next_step`; scope imutável)
 
 ---
 
@@ -93,7 +93,7 @@ Critério: `pytest` roda (mesmo que só import), `npm run build` passa, ninguém
 - [ ] S4.1 `api.ts` (7 endpoints) + polling 1,5 s (`GET /cases/{id}`, `GET /events?after=seq`)
 - [ ] S4.2 `CaseInput`: textarea pré-preenchida, toggle "documento adversarial", banner "dados fictícios"
 - [ ] S4.3 `SquadBoard`: `AgentCard` (status, domínios acessados, contagens), `Timeline`, `GovernancePanel` (✓/✗ por agente×domínio, security events em destaque, `fields_hidden`, badges "permissões inalteradas" / "LLM sem capability de acesso"), `MissingInfoForm`, indicação de rework (Review → owner reaberto)
-- [ ] S4.4 `ReportView`: seções do `Report`, `AlternativesGrid` (colunas comparáveis, sem destaque), `SourceChip` (abre payload da evidência), findings, banner de fallback quando `llm_mode != real`
+- [ ] S4.4 `ReportView`: seções do `Report`, `AlternativesGrid` (colunas comparáveis, sem destaque), `SourceChip` (abre payload da evidência), findings; aviso "LLM não configurado" quando `/api/health` reporta `unconfigured`
 - [ ] S4.5 `HumanGate`: "Solicitar ajuste" / "Aprovar para próxima etapa" + texto de responsabilidade humana; estado `completed_demo`
 - [ ] S4.6 Desenvolver contra `tests/fixtures/*.json` servidos estaticamente até S1/S3 estarem prontos
 
@@ -111,7 +111,7 @@ Critério: `pytest` roda (mesmo que só import), `npm run build` passa, ninguém
 
 ## T9 — Integração e demo (após S1–S5)
 
-- [ ] T9.1 `tests/test_demo_case.py`: golden run end-to-end com `ScriptedFallback` (status final `human_review_required`, 1 rework, findings esperados, 2 security events no modo adversarial, zero `CLIENTE-999` no relatório)
+- [ ] T9.1 `tests/test_demo_case.py`: golden run end-to-end com provider stub de teste (status final `human_review_required`, 1 rework, findings esperados, 2 security events no modo adversarial, zero `CLIENTE-999` no relatório)
 - [ ] T9.2 Rodar end-to-end com LLM real; ajustar playbooks/schemas até 3 runs seguidos passarem no Output Guard sem `GUARD_UNGROUNDED` em massa
 - [ ] T9.3 `npm run build` + servir pelo FastAPI; README seção "Rodar localmente" (`.env`, dois comandos)
 - [ ] T9.4 Checklist do Final P0 Scope (20 itens) marcado; abrir P1 só depois

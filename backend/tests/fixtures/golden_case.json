@@ -1,5 +1,5 @@
 {
-  "_meta": { "mock": true, "note": "Caso de referência da demo. Usado por testes e pelo ScriptedFallback (S2.3)." },
+  "_meta": { "mock": true, "note": "Caso de referência da demo. Usado pelos testes." },
   "user_id": "analyst-001",
   "prompt": "O cliente Fazenda Horizonte S.A. solicita R$ 50 milhões para custeio da safra de soja 2026/27. Analise a operação e proponha uma estrutura.",
   "expected": {

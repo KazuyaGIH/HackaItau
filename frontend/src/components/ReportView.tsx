@@ -15,12 +15,6 @@ export function ReportView({ caseId, report }: Props) {
       <div className="banner info">
         <b>{r.decision_status}</b> · {r.disclaimer}
       </div>
-      {r.llm_mode !== 'real' && (
-        <div className="banner warn">
-          LLM em modo <b>{r.llm_mode}</b>: interpretação qualitativa por roteiro determinístico (ScriptedFallback). Cálculos,
-          fontes e governança são reais. Configure <code>LLM_API_KEY</code> para a demo com LLM.
-        </div>
-      )}
 
       <dl className="summary">
         <div>
@@ -208,7 +202,7 @@ export function ReportView({ caseId, report }: Props) {
               <td>{a.tool_calls}</td>
               <td>{a.denied_calls}</td>
               <td>{a.fields_hidden}</td>
-              <td>{a.fallback_used ? 'fallback' : `${a.llm_calls} chamadas`}</td>
+              <td>{a.llm_calls} chamadas</td>
             </tr>
           ))}
         </tbody>

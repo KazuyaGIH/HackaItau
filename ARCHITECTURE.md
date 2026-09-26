@@ -68,7 +68,7 @@ Estado do case fica em memória (dict). O frontend faz **polling REST**.
 │  (JsonMockRepo)  (keyword search)    (pure funcs)                          │
 │                                                                           │
 │  EVIDENCE REGISTRY (por case)   EVENT LOG (por case, append-only)          │
-│  LLM PROVIDER (OpenAI-compatible; ScriptedFallback sinalizado)            │
+│  LLM PROVIDER (OpenAI-compatible; obrigatório para executar agentes)      │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -167,7 +167,7 @@ class AgentResult(BaseModel):
     evidence_ids: list[str]           # todos existentes no EvidenceRegistry do case
     calculation_ids: list[str]
     assumptions: list[Assumption]     # {name, value, source_id | None, justification, origin: "code" | "llm_qualitative"}
-    usage: LLMUsage                   # tokens in/out, latency_ms, model, fallback_used
+    usage: LLMUsage                   # tokens in/out, latency_ms, model, retries
     warnings: list[str]
 
 class Agent(Protocol):
@@ -180,7 +180,7 @@ class Agent(Protocol):
 **Runtime comum (`agents/runtime.py`) — três fases, sempre nesta ordem:**
 
 1. **gather (código):** o agente (ou o default do runtime) executa uma **lista fixa** de tool calls via `Toolbox`; cada chamada é autorizada, filtrada e auditada individualmente. Parâmetros vêm do `CaseScope`/`TaskSpec`, nunca do LLM. Resultado: `EvidenceBundle` = `SourceRecord`s e `CalculationRecord`s já filtrados por row/field policy e marcados como untrusted.
-2. **reason (LLM):** **uma** chamada estruturada: `system = card + playbook + regras de untrusted data`, `user = instruction + inputs + evidence bundle + JSON schema`. **Sem tools na chamada.** Resposta validada contra `output_schema`; 1 retry com o erro de validação como feedback. Se o provider falhar e `LLM_FALLBACK_ENABLED=true`, entra o `ScriptedFallback` com `fallback_used=true` (evento `LLM_FALLBACK_USED`, banner na UI).
+2. **reason (LLM):** **uma** chamada estruturada: `system = card + playbook + regras de untrusted data`, `user = instruction + inputs + evidence bundle + JSON schema`. **Sem tools na chamada.** Resposta validada contra `output_schema`; 1 retry com o erro de validação como feedback. Sem provider configurado, erro do provider ou schema ainda inválido após o retry → `AgentExecutionError` (case `failed`, `EXECUTION_FAILED` auditado). Não existe resposta roteirizada: o produto exige LLM real; testes usam um provider stub que vive só em `tests/`.
 3. **validate (código):** grounding (`evidence_ids`/`calculation_ids` existem no registry?), campos materiais copiados/recomputados de `CALC-*` quando aplicável, remoção de IDs inventados (evento `GROUNDING_REJECTED`), regras específicas do agente, registro do output no EvidenceRegistry como `OUT-<agent_id>-R<n>`.
 
 Um agente **nunca** recebe: permissões, chaves, scope bruto, outputs completos de outros agentes, o prompt original inteiro (só a `instruction` do Orchestrator — o prompt do usuário entra como untrusted data quando necessário).
@@ -501,9 +501,9 @@ class Event(BaseModel):
 ```
 
 **EventType (congelado):**
-`CASE_CREATED, ORCHESTRATOR_STARTED, BOOTSTRAP_RESOLVED, MISSING_INFO_REQUESTED, INPUT_RECEIVED, SCOPE_FROZEN, AGENT_SELECTED, AGENT_STARTED, PERMISSION_CHECKED, PERMISSION_DENIED, SECURITY_EVENT, TOOL_CALLED, LLM_CALLED, LLM_FALLBACK_USED, GROUNDING_REJECTED, AGENT_COMPLETED, REVIEW_STARTED, REVIEW_ISSUE_FOUND, REVIEW_COMPLETED, TASK_REOPENED, RESULT_CONSOLIDATED, OUTPUT_GUARD_APPLIED, HUMAN_REVIEW_REQUIRED, HUMAN_APPROVED, HUMAN_ADJUSTMENT_REQUESTED, CASE_COMPLETED, EXECUTION_FAILED`
+`CASE_CREATED, ORCHESTRATOR_STARTED, BOOTSTRAP_RESOLVED, MISSING_INFO_REQUESTED, INPUT_RECEIVED, SCOPE_FROZEN, AGENT_SELECTED, AGENT_STARTED, PERMISSION_CHECKED, PERMISSION_DENIED, SECURITY_EVENT, TOOL_CALLED, LLM_CALLED, GROUNDING_REJECTED, AGENT_COMPLETED, REVIEW_STARTED, REVIEW_ISSUE_FOUND, REVIEW_COMPLETED, TASK_REOPENED, RESULT_CONSOLIDATED, OUTPUT_GUARD_APPLIED, HUMAN_REVIEW_REQUIRED, HUMAN_APPROVED, HUMAN_ADJUSTMENT_REQUESTED, CASE_COMPLETED, EXECUTION_FAILED`
 
-Payload de `TOOL_CALLED`/`PERMISSION_CHECKED`/`PERMISSION_DENIED` segue o README §32: `{action, resource_domain, resource_key, allowed, reason, purpose, source_ids, fields_hidden, probe}`. `LLM_CALLED` carrega `{model, tokens_in, tokens_out, latency_ms, fallback}` — isso é toda a "observabilidade" do P0; a UI mostra contagens simples (tool calls, fontes, eventos de segurança, tempo). Dashboard de tokens/custo é P1.
+Payload de `TOOL_CALLED`/`PERMISSION_CHECKED`/`PERMISSION_DENIED` segue o README §32: `{action, resource_domain, resource_key, allowed, reason, purpose, source_ids, fields_hidden, probe}`. `LLM_CALLED` carrega `{model, tokens_in, tokens_out, latency_ms, ok}` — isso é toda a "observabilidade" do P0; a UI mostra contagens simples (tool calls, fontes, eventos de segurança, tempo). Dashboard de tokens/custo é P1.
 
 Persistência: em memória. Dump JSON de runs em disco é P1.
 
@@ -537,7 +537,6 @@ class Report(BaseModel):
     review: ReviewView                                           # findings (validators + AI + guard), rework_rounds, resolved/open
     governance: GovernanceView                                   # user, agentes, domínios acessados por agente, denials, security events, fields_hidden
     human_gate: HumanGateView                                    # status, ações disponíveis, comentários
-    llm_mode: Literal["real","fallback","mixed"]
 ```
 
 Resumo executivo por LLM: **P1**, e passa pelo Output Guard como qualquer texto.
@@ -564,7 +563,7 @@ Polling a cada 1,5 s: `GET /api/cases/{id}` (estado + outputs + report) e `GET /
 /
 ├─ README.md
 ├─ ARCHITECTURE.md
-├─ .env.example                     # LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, DEMO_MODE, LLM_FALLBACK_ENABLED
+├─ .env.example                     # LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, DEMO_MODE
 ├─ backend/
 │  ├─ pyproject.toml
 │  ├─ app/
@@ -613,7 +612,6 @@ Polling a cada 1,5 s: `GET /api/cases/{id}` (estado + outputs + report) e `GET /
 │  │  ├─ llm/
 │  │  │  ├─ provider.py             # LLMProvider Protocol, LLMResponse, LLMUsage
 │  │  │  ├─ openai_compat.py        # chat completions + json mode (sem tools no P0)
-│  │  │  ├─ scripted_fallback.py    # fixtures por (agent_id, round); marca fallback_used
 │  │  │  └─ prompting.py            # wrap_untrusted(), render_schema(), retry-on-validation
 │  │  ├─ agents/
 │  │  │  ├─ base.py                 # Agent Protocol
@@ -636,7 +634,7 @@ Polling a cada 1,5 s: `GET /api/cases/{id}` (estado + outputs + report) e `GET /
 │     ├─ test_calculations.py
 │     ├─ test_validators.py         # ASSUMPTION_ABOVE_BASELINE etc.
 │     ├─ test_output_guard.py
-│     ├─ test_orchestrator.py       # gate, rework 1x, human gate obrigatório (com ScriptedFallback)
+│     ├─ test_orchestrator.py       # gate, rework 1x, human gate obrigatório (provider stub de teste)
 │     └─ test_demo_case.py          # golden run end-to-end sem LLM real
 ├─ frontend/                        # Vite + React + TS
 │  └─ src/  api.ts, types.ts, App.tsx, components/{CaseInput,SquadBoard,AgentCard,Timeline,GovernancePanel,ReportView,AlternativesGrid,SourceChip,HumanGate}.tsx
@@ -708,9 +706,9 @@ Streams não precisam ser um por pessoa/agente; são fronteiras de merge sem con
 - Event Log + timeline + governance panel (allow/deny, domínios por agente, security events) na UI.
 - Report estruturado e imparcial (2–3 alternativas sem preferência) + Human Gate (aprovar próxima etapa / solicitar ajuste = registra).
 - Loop de rework 1×, reabrindo owner + dependentes.
-- `LLMProvider` OpenAI-compatible com **um** modelo (`LLM_MODEL`); `ScriptedFallback` desligado por padrão, ativável por env, sempre sinalizado.
+- `LLMProvider` OpenAI-compatible com **um** modelo (`LLM_MODEL`); sem `LLM_API_KEY` a execução é recusada (`503 llm_not_configured`) — nenhuma resposta pronta no produto.
 - Mock data com `_meta.mock` e campos `never`; policy mock; catálogo mock; corpus curto; keyword retriever.
-- Testes críticos: policy engine (incl. no-union e structuring ∌ financials), bootstrap resolver, filtros, cálculos, validators, output guard, orchestrator com fallback, golden demo case.
+- Testes críticos: policy engine (incl. no-union e structuring ∌ financials), bootstrap resolver, filtros, cálculos, validators, output guard, orchestrator com provider stub de teste, golden demo case.
 - `.env.example`, instruções de execução local.
 
 ### P1 — se der tempo, sem mudar contratos
@@ -735,7 +733,7 @@ Streams não precisam ser um por pessoa/agente; são fronteiras de merge sem con
 
 | Risco | Impacto | Mitigação |
 |---|---|---|
-| LLM não segue o JSON schema | agente falha | `json_object` mode + schema no prompt + 1 retry com erro de validação; `ScriptedFallback` como contingência sinalizada |
+| LLM não segue o JSON schema | agente falha | `json_object` mode + schema no prompt + 1 retry com erro de validação; falha auditável (`EXECUTION_FAILED`) se persistir |
 | LLM devolve números divergentes dos `CALC-*` no texto | relatório inconsistente | números materiais são copiados dos `CALC-*`; divergência textual vira `warning` visível; playbook instrui a não repetir números |
 | Deny visível na demo depende de comportamento do LLM | camada de policy "invisível" | scope probe (§11.4) torna o deny determinístico; testes cobrem tentativa real |
 | Latência: 4 agentes + rework (Risk, Structuring, Review) ≈ 7 chamadas LLM sequenciais | demo longa | uma chamada por agente, sem tool loop; prompts compactos; fase gather em código; UI mostra progresso incremental; medir e, se preciso, `model_role fast` em P1 |
@@ -764,7 +762,7 @@ Nada aqui é implementado agora; todos os pontos são extensões que **não** ex
 | Múltiplos providers / roteamento por tarefa | `ProviderRouter` implementando `LLMProvider` | tudo acima do provider |
 | Persistência e escala horizontal | `CaseStore` → Postgres/SQLite; `EventLog` → tabela append-only; execução → worker/fila | schemas, API, UI (polling já funciona; SSE opcional) |
 | Novos produtos financeiros | `products.json` + regras em `policies.json` + validators de estrutura específicos | Structuring Agent genérico sobre catálogo |
-| Evals e golden dataset | `tests/golden/` executados contra `ScriptedFallback` e contra LLM real em CI noturno | — |
+| Evals e golden dataset | `tests/golden/` executados contra provider stub e contra LLM real em CI noturno | — |
 | Observabilidade | exportar `Event`s (`LLM_CALLED`, `TOOL_CALLED`) para OpenTelemetry/logs estruturados | os eventos já existem |
 | ResearchAgent (busca complexa) | agente comum no registry, com tool-calling dinâmico habilitado e tools `search` | — |
 
@@ -779,7 +777,7 @@ Nada aqui é implementado agora; todos os pontos são extensões que **não** ex
 5. **Observabilidade/tokens (README §33–34).** Reduzido a campos em `LLM_CALLED`; contadores simples na UI. Dashboard é P1.
 6. **Human Gate "solicitar ajuste" reabre agente (README §8).** **Decisão:** P0 registra; P1 re-executa Structuring 1×. O case nunca conclui sem `approve_next_step`.
 7. **Agent Card `human_gate_required_for` (README §13).** Documental no MVP (não há tools de ação). Mantido para extensão.
-8. **`DEMO_MODE` (README §47).** Só pré-carrega a demanda e habilita `demo_options`; não é fallback de LLM (flag separada, sempre sinalizada).
+8. **`DEMO_MODE` (README §47).** Só pré-carrega a demanda e habilita `demo_options`; não altera o provider de LLM (o LLM real continua obrigatório).
 9. **Estrutura de repositório (README §45).** `docker-compose.yml`, `services/telemetry.py`, múltiplos módulos de API e `docs/architecture.md` removidos/fundidos; Next.js trocado por Vite.
 10. **Permissões no payload de identidade (README §15).** **Decisão:** o request só carrega `user_id`; permissões vêm de `identities.json`.
 11. **`preferred_for_discussion` (README §10.3, §18 "Estrutura sugerida").** O README diz que é "apenas priorização operacional", mas qualquer marcação de preferida pelo sistema é uma recomendação implícita e conflita com "relatório neutro" e "decisão humana". **Decisão:** removido; 2–3 alternativas comparáveis lado a lado; o Human Gate mostra "alternativas para avaliação", não "estrutura sugerida".
@@ -815,7 +813,7 @@ O que **deliberadamente não** será construído no P0, por quê, e o que fica c
 | D18 | Detector de injeção sofisticado | heurística basta e o detector não é barreira (defesa por capability + scope + policy) | trocar `injection_guard` |
 | D19 | DLP / redação automática de PII | campos sensíveis controlados por `never` e checados no guard | DLP no gateway |
 | D20 | Telemetria, tracing, dashboard de tokens/custo | eventos `LLM_CALLED` já carregam tokens/latência; UI mostra contadores simples | dashboard P1; OTel futuro |
-| D21 | Evals/golden dataset além do golden demo case | um teste end-to-end com `ScriptedFallback` protege o fluxo | `tests/golden/` |
+| D21 | Evals/golden dataset além do golden demo case | um teste end-to-end com provider stub protege o fluxo | `tests/golden/` |
 | D22 | `get_historical_cases` / precedentes | não é necessário para a narrativa da demo | P1 |
 | D23 | Agent Registry UI (`GET /api/agents`) | os cards aparecem no SquadBoard de qualquer forma | P1 |
 | D24 | Tools de ação (enviar proposta, aprovar) | não existem por design | nunca sem human gate obrigatório |
@@ -832,7 +830,7 @@ O que precisa existir, funcionando localmente e coberto por testes, antes de qua
 1. `POST /api/cases` → `interpret` (LLM) → `BootstrapClientResolver` (só permissão do usuário, match exato, saída mínima) → `CaseScope` congelado → `SCOPE_FROZEN`.
 2. `waiting_input` quando o cliente não resolve ou o Eligibility bloqueia; `POST /input` retoma.
 3. Agent Registry com 4 `AgentCard` JSON e plan template `credito_agro` com `depends_on` e `input_projection`.
-4. Runtime `gather (código, tools fixas) → reason (LLM, 1 chamada, sem tools) → validate (código)`; retry único em erro de schema; `ScriptedFallback` opcional e sempre sinalizado.
+4. Runtime `gather (código, tools fixas) → reason (LLM, 1 chamada, sem tools) → validate (código)`; retry único em erro de schema; sem LLM configurado a execução é recusada.
 5. Tool Registry com exatamente as 9 tools P0 (§8); nenhuma tool de SQL/shell/HTTP/browser/filesystem/Python.
 6. Policy Engine `authorize()` = tool allowlist ∩ user ∩ agent ∩ purpose ∩ case_scope, com `Decision` e razões de deny; `client_id` do request nunca vira permissão.
 7. Gateway: row scope + field projection (com `never` e deny por omissão) + injection scan + scope probe + eventos `PERMISSION_CHECKED/DENIED`, `SECURITY_EVENT`, `TOOL_CALLED` + registro `SRC-/KB-/CALC-`.
@@ -848,4 +846,4 @@ O que precisa existir, funcionando localmente e coberto por testes, antes de qua
 17. Output Guard (secrets, scope, `never`, claims sem evidência, linguagem de aprovação/preferência, `decision_status` forçado).
 18. `Report` estruturado e imparcial com todas as seções de §16; Event Log append-only com os `EventType` congelados.
 19. Frontend de uma página: input (com toggle adversarial) → SquadBoard (cards, timeline, governance/security) → ReportView (alternativas lado a lado, source chips, findings) → Human Gate; disclaimers fixos.
-20. Testes críticos passando: policy engine (no-union, structuring ∌ financials, scope deny), bootstrap resolver, filtros/`never`, injection flag + probe, cálculos, validators (61 vs 58), output guard, orchestrator com fallback (gate, rework 1×, human gate obrigatório), golden demo case end-to-end; `.env.example` e instruções de execução local; demo end-to-end com LLM real rodando localmente.
+20. Testes críticos passando: policy engine (no-union, structuring ∌ financials, scope deny), bootstrap resolver, filtros/`never`, injection flag + probe, cálculos, validators (61 vs 58), output guard, orchestrator com provider stub (gate, rework 1×, human gate obrigatório), golden demo case end-to-end; `.env.example` e instruções de execução local; demo end-to-end com LLM real rodando localmente.

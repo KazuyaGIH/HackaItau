@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: float = 60.0
-    llm_fallback_enabled: bool = False
 
     demo_mode: bool = True
     frontend_dist: Path = REPO_ROOT / "frontend" / "dist"

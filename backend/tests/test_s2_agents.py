@@ -1,4 +1,4 @@
-"""S2.2–S2.8 — runtime gather→reason→validate, grounding, fallback, e os 4 agentes com um FakeProvider."""
+"""S2.2–S2.8 — runtime gather→reason→validate, grounding, erros de provider e os 4 agentes com um FakeProvider."""
 
 import json
 
@@ -15,6 +15,7 @@ from app.llm.openai_compat import LLMError
 from app.llm.prompting import UNTRUSTED_OPEN
 from app.llm.provider import LLMResponse, Message
 from tests.conftest import make_ctx
+from tests.fake_llm import StubProvider
 
 INPUTS = {"requested_amount": 50_000_000, "purpose": "custeio", "crop": "soja"}
 
@@ -52,7 +53,7 @@ def _task(agent_id: str, round_: int = 1, upstream: list[str] | None = None, rew
     )
 
 
-async def _run(registry, toolbox_factory, analyst, scope_001, agent_id, provider, *, fallback=False, **kw):
+async def _run(registry, toolbox_factory, analyst, scope_001, agent_id, provider, **kw):
     events = kw.pop("events", None)
     evidence = kw.pop("evidence", None)
     events = events if events is not None else EventLog("case-test")
@@ -60,7 +61,7 @@ async def _run(registry, toolbox_factory, analyst, scope_001, agent_id, provider
     task = kw.pop("task", None) or _task(agent_id)
     tb = toolbox_factory(agent_id, events=events, evidence=evidence, round_=task.round, **kw)
     ctx = make_ctx(analyst, agent_id, scope_001)
-    rt = AgentRuntime(provider, "fake-model", fallback_enabled=fallback)
+    rt = AgentRuntime(provider, "fake-model")
     result = await rt.run(registry.get(agent_id), ctx, task, tb, events, evidence)
     return result, events, evidence
 
@@ -94,7 +95,7 @@ async def test_eligibility_runtime_events_grounding_and_evidence(registry, toolb
     assert out.status == "ready"
     assert "SRC-CLIENT-FINANCIALS-CLIENTE-999" not in out.evidence_ids
     assert result.output_id == "OUT-agro_eligibility-R1" and evidence.get(result.output_id) is not None
-    assert result.usage.fallback_used is False and result.tool_calls >= 3
+    assert result.tool_calls >= 3
     assert "client_financials" not in result.data_domains_accessed
 
     types = [e.type for e in events.all()]
@@ -152,22 +153,20 @@ async def test_eligibility_blocks_when_mandatory_doc_missing_even_if_llm_says_re
     assert any(w.startswith("status_llm_sobrescrito") for w in result.warnings)
 
 
-async def test_retry_once_on_invalid_json_then_fallback_on_provider_error(registry, toolbox_factory, analyst, scope_001):
+async def test_retry_once_on_invalid_json_then_fail_on_provider_error(registry, toolbox_factory, analyst, scope_001):
     provider = FakeProvider("isso não é json", ELIG_OK)
     result, events, _ = await _run(registry, toolbox_factory, analyst, scope_001, "agro_eligibility", provider)
     assert len(provider.calls) == 2 and result.usage.retries == 1
     assert "erro" in provider.calls[1][-1].content.lower() or "json" in provider.calls[1][-1].content.lower()
 
-    provider = FakeProvider(LLMError("timeout"))
-    result, events, _ = await _run(
-        registry, toolbox_factory, analyst, scope_001, "agro_eligibility", provider, fallback=True
-    )
-    assert result.usage.fallback_used is True and result.usage.model == "scripted-fallback"
-    assert events.of_type(EventType.LLM_FALLBACK_USED)
-    assert events.of_type(EventType.LLM_FALLBACK_USED)[0].payload["reason"].startswith("provider_error")
+    with pytest.raises(AgentExecutionError, match="provider_error"):
+        await _run(registry, toolbox_factory, analyst, scope_001, "agro_eligibility", FakeProvider(LLMError("timeout")))
 
-    with pytest.raises(AgentExecutionError):
-        await _run(registry, toolbox_factory, analyst, scope_001, "agro_eligibility", FakeProvider(LLMError("x")))
+    with pytest.raises(AgentExecutionError, match="llm_unconfigured"):
+        await _run(registry, toolbox_factory, analyst, scope_001, "agro_eligibility", None)
+
+    with pytest.raises(AgentExecutionError, match="schema_validation_failed_after_retry"):
+        await _run(registry, toolbox_factory, analyst, scope_001, "agro_eligibility", FakeProvider("x", "y"))
 
 
 RISK_LLM = json.dumps(
@@ -360,28 +359,20 @@ async def test_review_ai_findings_require_evidence(registry, toolbox_factory, an
     assert "finding_sem_evidencia_descartado:NO_EVIDENCE" in result.warnings
 
 
-async def test_fallback_outputs_validate_for_all_agents(registry, toolbox_factory, analyst, scope_001):
+async def test_stub_provider_outputs_validate_for_all_agents(registry, toolbox_factory, analyst, scope_001):
     events, evidence = EventLog("case-test"), EvidenceRegistry()
+    provider = StubProvider()
     upstream: list[str] = []
     for agent_id in ("agro_eligibility", "agro_credit_risk", "agro_structuring", "credit_review"):
         task = _task(agent_id, upstream=list(upstream))
         result, *_ = await _run(
-            registry,
-            toolbox_factory,
-            analyst,
-            scope_001,
-            agent_id,
-            None,
-            fallback=True,
-            task=task,
-            events=events,
-            evidence=evidence,
+            registry, toolbox_factory, analyst, scope_001, agent_id, provider, task=task, events=events, evidence=evidence
         )
-        assert result.usage.fallback_used is True
-        assert not events.of_type(EventType.GROUNDING_REJECTED)  # roteiro só usa IDs do bundle
+        assert result.usage.model == "fake-model" and result.usage.retries == 0
+        assert not events.of_type(EventType.GROUNDING_REJECTED)  # stub só cita IDs presentes no prompt
         upstream.append(result.output_id)
-    assert len(events.of_type(EventType.LLM_FALLBACK_USED)) == 4
-    assert all(e.payload["reason"] == "llm_unconfigured" for e in events.of_type(EventType.LLM_FALLBACK_USED))
+    assert len(provider.calls) == 4
+    assert len([e for e in events.of_type(EventType.LLM_CALLED) if e.payload["ok"]]) == 4
 
 
 def test_playbooks_exist_and_forbid_decisions(registry):

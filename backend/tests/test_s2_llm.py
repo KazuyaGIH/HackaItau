@@ -1,17 +1,14 @@
-"""S2.1 — provider OpenAI-compatible, prompting e ScriptedFallback."""
+"""S2.1 — provider OpenAI-compatible e prompting."""
 
 import json
 
 import httpx
 import pytest
 
-from app.core.schemas.agent import TaskSpec
-from app.core.schemas.evidence import EvidenceBundle, SourceRecord
 from app.core.schemas.outputs import EligibilityOutput, StructuringOutput
 from app.llm.openai_compat import LLMError, OpenAICompatProvider, SecretInPromptError
 from app.llm.prompting import UNTRUSTED_CLOSE, UNTRUSTED_OPEN, extract_json, render_schema, wrap_untrusted
 from app.llm.provider import Message, ToolSchema
-from app.llm.scripted_fallback import ScriptedFallback
 
 KEY = "sk-test-SECRET-123"
 
@@ -45,7 +42,7 @@ async def test_provider_json_mode_no_tools_and_usage():
     assert h.body["response_format"] == {"type": "json_object"}
     assert "tools" not in h.body
     assert h.headers["authorization"] == f"Bearer {KEY}"
-    assert resp.usage.tokens_in == 11 and resp.usage.tokens_out == 7 and resp.usage.fallback_used is False
+    assert resp.usage.tokens_in == 11 and resp.usage.tokens_out == 7
 
 
 async def test_provider_rejects_dynamic_tools():
@@ -88,36 +85,3 @@ def test_wrap_untrusted_and_extract_json():
         extract_json("sem json")
     schema = json.loads(render_schema(StructuringOutput))
     assert "alternatives" in schema["properties"]
-
-
-def _bundle() -> EvidenceBundle:
-    src = SourceRecord(
-        id="SRC-PRODUCT-CATALOG-PROD-CUSTEIO-01",
-        kind="source",
-        resource_domain="product_catalog",
-        resource_key="PROD-CUSTEIO-01",
-        accessed_by_agent="agro_structuring",
-        data={
-            "product_id": "PROD-CUSTEIO-01",
-            "purpose": "custeio",
-            "min_amount": 1_000_000,
-            "max_amount": 80_000_000,
-            "tenor_months_min": 6,
-            "tenor_months_max": 14,
-            "amortization_options": ["bullet_post_harvest"],
-            "guarantee_options": ["penhor_safra", "cpr_financeira"],
-        },
-    )
-    return EvidenceBundle(sources=[src])
-
-
-def test_scripted_fallback_uses_only_bundle_ids_and_no_preference():
-    task = TaskSpec(task_id="t", agent_id="agro_structuring", instruction="x", inputs={"requested_amount": 50_000_000})
-    out = StructuringOutput.model_validate(ScriptedFallback().produce("StructuringOutput", task, _bundle()))
-    allowed = _bundle().allowed_ids()
-    assert 2 <= len(out.alternatives) <= 3
-    for alt in out.alternatives:
-        assert set(alt.evidence_ids) <= allowed
-        assert alt.amount <= 50_000_000
-        assert "prefer" not in alt.rationale.lower()
-    assert "[fallback]" in out.comparison_notes

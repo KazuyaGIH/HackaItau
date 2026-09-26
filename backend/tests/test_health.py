@@ -8,4 +8,4 @@ def test_health_reports_llm_mode():
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
-    assert body["llm_mode"] in {"real", "fallback", "unconfigured"}
+    assert body["llm_mode"] in {"real", "unconfigured"}

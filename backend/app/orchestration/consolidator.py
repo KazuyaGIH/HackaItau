@@ -74,7 +74,6 @@ def _governance(
                 denied_calls=denied,
                 fields_hidden=hidden_by_agent.get(agent_id, 0),
                 llm_calls=llm_calls,
-                fallback_used=bool(r and r.usage.fallback_used),
             )
         )
     assert state.scope is not None
@@ -87,15 +86,6 @@ def _governance(
         security_events=len(events.of_type(EventType.SECURITY_EVENT)),
         fields_hidden_total=sum(hidden_by_agent.values()),
     )
-
-
-def llm_mode_of(results: dict[str, AgentResult]) -> str:
-    flags = {r.usage.fallback_used for r in results.values()}
-    if flags == {True}:
-        return "fallback"
-    if flags == {False} or not flags:
-        return "real"
-    return "mixed"
 
 
 def consolidate(
@@ -200,5 +190,4 @@ def consolidate(
         ),
         governance=_governance(state, results, events, evidence),
         human_gate=HumanGateView(status="pending", available_actions=["approve_next_step", "request_adjustment"]),
-        llm_mode=llm_mode_of(results),  # type: ignore[arg-type]
     )

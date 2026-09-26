@@ -1,4 +1,4 @@
-"""S3: orquestração end-to-end com ScriptedFallback, gate de Eligibility, rework ≤ 1, Output Guard e human gate."""
+"""S3: orquestração end-to-end (StubProvider), gate de Eligibility, rework ≤ 1, Output Guard e human gate."""
 
 import json
 
@@ -13,18 +13,25 @@ from app.core.schemas.events import EventType
 from app.data.json_repository import JsonMockRepository
 from app.llm.provider import LLMResponse, LLMUsage
 from app.orchestration.orchestrator import OrchestratorError
+from tests.fake_llm import StubProvider
 
 PROMPT = "O cliente Fazenda Horizonte S.A. solicita R$ 50 milhões para custeio da safra de soja 2025/26."
 ANALYST = "analyst-001"
 
 
 def _settings(**kw) -> Settings:
-    return Settings(llm_api_key="", llm_fallback_enabled=True, _env_file=None, **kw)
+    return Settings(llm_api_key="", _env_file=None, **kw)
+
+
+def _container():
+    c = build_container(_settings())
+    c.runtime.provider = StubProvider()
+    return c
 
 
 @pytest.fixture
 def container():
-    return build_container(_settings())
+    return _container()
 
 
 async def _bootstrap(container, prompt=PROMPT, adversarial=False):
@@ -62,7 +69,6 @@ async def test_golden_path_ends_in_human_review_with_neutral_report(container):
         "approve_next_step",
         "request_adjustment",
     ]
-    assert rep.llm_mode == "fallback"
     assert len(rep.alternatives) >= 2 and len(rep.calculations) >= 2 and rep.stress_scenarios
     # números materiais vêm de CALC-*, nunca do LLM
     metrics = next(c for c in rep.calculations if c.name == "credit_metrics")
@@ -110,7 +116,7 @@ class _RepoWithoutFinancialStatements(JsonMockRepository):
 
 
 async def test_eligibility_blocked_stops_before_risk_then_input_unblocks():
-    container = build_container(_settings())
+    container = _container()
     container.orchestrator._repo = _RepoWithoutFinancialStatements(container.settings.mock_data_dir)
     rec = await _bootstrap(container)
 
@@ -147,7 +153,7 @@ async def test_eligibility_blocked_stops_before_risk_then_input_unblocks():
     )
     assert st.status == CaseStatus.planned and st.scope.client_ids == ("CLIENTE-001",)
     assert rec.answers == {"demonstracoes_financeiras": "DF-2025 recebida"}
-    container.runtime.provider = None
+    container.runtime.provider = StubProvider()
     await container.orchestrator.run(st.case_id)
     assert st.status == CaseStatus.human_review_required, st.error
     assert st.scope.client_ids == ("CLIENTE-001",)
@@ -200,10 +206,12 @@ async def test_case_scope_is_immutable(container):
     assert CaseScope(client_ids=("CLIENTE-001",), purpose="credit_analysis_agro").client_ids == ("CLIENTE-001",)
 
 
-async def test_run_without_llm_and_without_fallback_fails_auditably():
-    c = build_container(Settings(llm_api_key="", llm_fallback_enabled=False, _env_file=None))
+async def test_run_without_llm_is_refused_before_starting():
+    c = build_container(Settings(llm_api_key="", _env_file=None))
     rec = await c.orchestrator.create_case(ANALYST, PROMPT, DemoOptions())
-    await c.orchestrator.run(rec.state.case_id)
-    assert rec.state.status == CaseStatus.failed
-    assert rec.state.error and "llm_unconfigured" in rec.state.error
-    assert rec.events.of_type(EventType.EXECUTION_FAILED)
+    assert rec.state.llm_mode == "unconfigured" and rec.state.status == CaseStatus.planned
+    with pytest.raises(OrchestratorError, match="LLM_API_KEY") as exc:
+        await c.orchestrator.run(rec.state.case_id)
+    assert exc.value.code == "llm_not_configured" and exc.value.http_status == 503
+    assert rec.state.status == CaseStatus.planned  # nada executou
+    assert not rec.events.of_type(EventType.AGENT_STARTED)

@@ -30,7 +30,9 @@ export default function App() {
           <span className="tag warn">dados fictícios (demo)</span>
           {healthError && <span className="tag danger">backend indisponível: {healthError}</span>}
           {health && (
-            <span className={`tag ${health.llm_mode === 'real' ? 'ok' : 'warn'}`}>LLM: {health.llm_mode}</span>
+            <span className={`tag ${health.llm_mode === 'real' ? 'ok' : 'danger'}`}>
+              {health.llm_mode === 'real' ? 'LLM configurado' : 'LLM não configurado'}
+            </span>
           )}
           {c.state && (
             <span className={`tag status-${c.state.status}`}>
@@ -41,6 +43,12 @@ export default function App() {
         </div>
       </header>
 
+      {health?.llm_mode === 'unconfigured' && (
+        <div className="banner danger">
+          LLM não configurado: defina <code>LLM_API_KEY</code> no <code>.env</code> e reinicie o backend. A execução dos
+          agentes é recusada até lá.
+        </div>
+      )}
       {c.error && <div className="banner danger">{c.error}</div>}
 
       {!c.state ? (

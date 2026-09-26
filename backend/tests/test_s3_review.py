@@ -32,6 +32,7 @@ from app.core.schemas.outputs import Finding
 from app.core.schemas.report import ReportItem
 from app.governance.output_guard import REDACTED, OutputGuard
 from tests.conftest import make_ctx
+from tests.fake_llm import StubProvider
 
 AGENTS = ("agro_eligibility", "agro_credit_risk", "agro_structuring")
 INPUTS = {"requested_amount": 50_000_000, "purpose": "custeio", "crop": "soja"}
@@ -44,10 +45,10 @@ def registry():
 
 
 async def _pipeline(registry, toolbox_factory, analyst, scope_001, *, adversarial=False):
-    """Roda os 3 agentes de análise com ScriptedFallback e devolve (results, evidence, events)."""
+    """Roda os 3 agentes de análise com o StubProvider e devolve (results, evidence, events)."""
     events, evidence = EventLog("case-test"), EvidenceRegistry()
     results: dict[str, AgentResult] = {}
-    rt = AgentRuntime(None, "fake-model", fallback_enabled=True)
+    rt = AgentRuntime(StubProvider(), "fake-model")
     for agent_id in AGENTS:
         task = TaskSpec(
             task_id=f"t-{agent_id}",
@@ -215,8 +216,8 @@ def test_merge_requires_rework_only_with_owner_and_known_action():
 
 @pytest.fixture
 async def guarded_case():
-    c = build_container(Settings(llm_api_key="sk-test-secret-value-000000", llm_fallback_enabled=True, _env_file=None))
-    c.runtime.provider = None  # sem chamadas reais; fallback
+    c = build_container(Settings(llm_api_key="sk-test-secret-value-000000", _env_file=None))
+    c.runtime.provider = StubProvider()  # sem chamadas reais
     rec = await c.orchestrator.create_case("analyst-001", PROMPT, DemoOptions())
     await c.orchestrator.run(rec.state.case_id)
     assert rec.state.report is not None, rec.state.error

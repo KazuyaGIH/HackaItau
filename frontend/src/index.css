@@ -89,7 +89,7 @@ button.ghost { background: transparent; color: #0b3d91; border-color: transparen
 .timeline ol { list-style: none; padding: 0; margin: 8px 0 0; max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
 .timeline li { padding: 3px 8px; border-bottom: 1px solid #f0f2f5; }
 .timeline li.SECURITY_EVENT, .timeline li.PERMISSION_DENIED, .timeline li.EXECUTION_FAILED { background: #fff5f5; }
-.timeline li.TASK_REOPENED, .timeline li.REVIEW_ISSUE_FOUND, .timeline li.LLM_FALLBACK_USED { background: #fffbea; }
+.timeline li.TASK_REOPENED, .timeline li.REVIEW_ISSUE_FOUND { background: #fffbea; }
 .timeline li.HUMAN_REVIEW_REQUIRED, .timeline li.CASE_COMPLETED { background: #f0fff4; }
 .seq { color: #b0b6c0; font-size: 0.75rem; display: inline-block; width: 36px; }
 
