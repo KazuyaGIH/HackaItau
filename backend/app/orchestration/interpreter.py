@@ -1,12 +1,23 @@
 """Interpretação da demanda (ARCHITECTURE.md §3). Saída é PROPOSTA: nada aqui vira permissão.
 
-`heuristic_interpret` é determinístico e serve de contingência quando o LLM não está configurado
-(S3.4 adiciona `interpret_with_llm`, que cai aqui em caso de falha).
+`heuristic_interpret` é determinístico e é a base; `interpret` pede ao LLM (sem tools) só para preencher campos
+que a heurística não achou. O prompt do usuário entra como UNTRUSTED_DATA; falha do LLM → heurística.
 """
 
 import re
 
+from pydantic import ValidationError
+
 from app.core.schemas.outputs import InterpretedDemand
+from app.llm.openai_compat import LLMError
+from app.llm.prompting import UNTRUSTED_RULES, extract_json, render_schema, wrap_untrusted
+from app.llm.provider import LLMProvider, Message
+
+_INTERPRET_SYSTEM = (
+    "Você extrai campos estruturados de um pedido de análise de crédito agro. Não decide nada, não aprova, "
+    "não infere permissões. Devolva apenas JSON.\n\n" + UNTRUSTED_RULES
+)
+_FILLABLE = ("client_ref", "requested_amount", "purpose", "crop", "cycle")
 
 _CLIENT_ID_RE = re.compile(r"\bCLIENTE-\d{3,}\b", re.IGNORECASE)
 # "cliente Fazenda Horizonte S.A. solicita" / "empresa X pede" / "para a Agro Delta Ltda."
@@ -79,3 +90,31 @@ def heuristic_interpret(prompt: str) -> InterpretedDemand:
         cycle=cycle,
         notes="heuristic",
     )
+
+
+async def interpret(prompt: str, provider: LLMProvider | None, model: str) -> InterpretedDemand:
+    base = heuristic_interpret(prompt)
+    base_fields = base.model_dump(include=set(_FILLABLE))
+    if provider is None or all(v is not None for v in base_fields.values()):
+        return base
+    user = (
+        "## Pedido do usuário\n"
+        + wrap_untrusted("user_prompt", prompt)
+        + "\n\n## Formato de saída\nJSON conforme:\n"
+        + render_schema(InterpretedDemand)
+        + '\nUse intent="credito_agro"; campos desconhecidos = null; purpose sem acento (ex.: custeio).'
+    )
+    try:
+        resp = await provider.complete(
+            model=model,
+            messages=[Message(role="system", content=_INTERPRET_SYSTEM), Message(role="user", content=user)],
+            response_schema=InterpretedDemand,
+        )
+        llm = InterpretedDemand.model_validate(extract_json(resp.content or ""))
+    except (LLMError, ValueError, ValidationError):
+        return base
+    llm_fields = llm.model_dump(include=set(_FILLABLE))
+    filled = {f: llm_fields[f] for f in _FILLABLE if base_fields[f] is None and llm_fields[f] is not None}
+    if not filled:
+        return base
+    return base.model_copy(update=filled | {"notes": "heuristic+llm:" + ",".join(sorted(filled))})
