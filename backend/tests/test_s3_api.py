@@ -60,6 +60,12 @@ def test_run_poll_report_and_human_gate(client):
     assert body["decision_status"] == "ready_for_human_review" and body["human_gate"]["status"] == "pending"
     assert len(body["alternatives"]) >= 2 and body["review"]["findings"]
 
+    calc = client.get(f"/api/cases/{cid}/evidence/{body['calculations'][0]['calculation_id']}")
+    assert calc.status_code == 200 and calc.json()["kind"] == "calculation" and "formula" in calc.json()
+    src = client.get(f"/api/cases/{cid}/evidence/SRC-CLIENT-PROFILE-CLIENTE-001").json()
+    assert src["kind"] == "source" and "tax_id" not in src["data"]  # campo `never` nunca chega à UI
+    assert client.get(f"/api/cases/{cid}/evidence/SRC-CLIENT-PROFILE-CLIENTE-999").status_code == 404
+
     r = client.post(f"/api/cases/{cid}/human-review", json={"decision": "request_adjustment", "comment": "detalhar"})
     assert r.status_code == 200 and r.json()["status"] == "human_review_required"
     r = client.post(f"/api/cases/{cid}/human-review", json={"decision": "approve_next_step"})

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.container import Container, get_container, llm_mode
 from app.core.schemas.case import CaseState, CreateCaseRequest, HumanReviewRequest, InputRequest
 from app.core.schemas.events import Event
+from app.core.schemas.evidence import AgentOutputRecord, CalculationRecord, SourceRecord
 from app.core.schemas.report import Report
 from app.orchestration.orchestrator import OrchestratorError
 
@@ -75,6 +76,18 @@ def get_report(case_id: str, c: Deps) -> Report:
             status_code=409, detail={"code": "report_not_ready", "message": "relatório ainda não consolidado"}
         )
     return report
+
+
+@router.get("/cases/{case_id}/evidence/{evidence_id}", response_model=SourceRecord | CalculationRecord | AgentOutputRecord)
+def get_evidence(case_id: str, evidence_id: str, c: Deps) -> SourceRecord | CalculationRecord | AgentOutputRecord:
+    """Payload por trás de um source/calculation/output ID citado no relatório (já filtrado pelo Gateway)."""
+    try:
+        item = c.orchestrator.get(case_id).evidence.get(evidence_id)
+    except OrchestratorError as exc:
+        raise _handle(exc) from exc
+    if item is None:
+        raise HTTPException(status_code=404, detail={"code": "evidence_not_found", "message": evidence_id})
+    return item
 
 
 @router.post("/cases/{case_id}/human-review", response_model=CaseState)

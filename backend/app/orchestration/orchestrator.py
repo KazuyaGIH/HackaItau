@@ -471,7 +471,7 @@ def _tag_round(findings: list[Finding], round_: int) -> list[Finding]:
 
 def _summary(result: AgentResult) -> str:
     out = result.output
-    for key in ("summary", "risk_summary", "comparison_notes", "overall_assessment"):
+    for key in ("summary", "risk_narrative", "comparison_notes", "overall_assessment"):
         value = out.get(key)
         if isinstance(value, str) and value:
             return value[:200]

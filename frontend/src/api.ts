@@ -1,10 +1,56 @@
-import type { HealthResponse } from './types'
+import type {
+  CaseEvent,
+  CaseState,
+  CreateCaseRequest,
+  EvidenceItem,
+  HealthResponse,
+  HumanReviewRequest,
+  InputRequest,
+  Report,
+} from './types'
+
+export class ApiError extends Error {
+  status: number
+  code: string
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.status = status
+    this.code = code
+  }
+}
 
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    let code = 'http_error'
+    let message = `${res.status} ${res.statusText}`
+    try {
+      const body = (await res.json()) as { detail?: { code?: string; message?: string } | string }
+      if (typeof body.detail === 'string') message = body.detail
+      else if (body.detail) {
+        code = body.detail.code ?? code
+        message = body.detail.message ?? message
+      }
+    } catch {
+      /* corpo não-JSON */
+    }
+    throw new ApiError(res.status, code, message)
+  }
   return (await res.json()) as T
 }
 
+const post = (url: string, body: unknown) =>
+  fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
 export const api = {
   health: () => fetch('/api/health').then(json<HealthResponse>),
+  createCase: (body: CreateCaseRequest) => post('/api/cases', body).then(json<CaseState>),
+  getCase: (id: string) => fetch(`/api/cases/${id}`).then(json<CaseState>),
+  events: (id: string, after = 0) => fetch(`/api/cases/${id}/events?after=${after}`).then(json<CaseEvent[]>),
+  provideInput: (id: string, body: InputRequest) => post(`/api/cases/${id}/input`, body).then(json<CaseState>),
+  run: (id: string) => post(`/api/cases/${id}/run`, {}).then(json<CaseState>),
+  report: (id: string) => fetch(`/api/cases/${id}/report`).then(json<Report>),
+  evidence: (id: string, evidenceId: string) =>
+    fetch(`/api/cases/${id}/evidence/${encodeURIComponent(evidenceId)}`).then(json<EvidenceItem>),
+  humanReview: (id: string, body: HumanReviewRequest) =>
+    post(`/api/cases/${id}/human-review`, body).then(json<CaseState>),
 }
