@@ -10,6 +10,7 @@ from app.core.schemas.context import CaseScope, ExecutionContext, UserIdentity
 from app.data.json_repository import JsonMockRepository
 from app.governance.loader import load_agent_cards, load_identities
 from app.knowledge.retriever import KeywordKnowledgeRetriever
+from app.tools.calc_tools import install_calc_handlers
 from app.tools.data_tools import install_data_handlers
 from app.tools.deps import ToolDeps
 from app.tools.gateway import Toolbox
@@ -72,11 +73,21 @@ def make_ctx(user: UserIdentity, agent_id: str, scope: CaseScope, purpose: str =
 @pytest.fixture
 def toolbox_factory(repo, knowledge, cards, analyst, scope_001):
     install_data_handlers()
+    install_calc_handlers()
 
-    def make(agent_id: str, *, user: UserIdentity = analyst, adversarial: bool = False, scope: CaseScope = scope_001):
-        events = EventLog("case-test")
-        evidence = EvidenceRegistry()
-        deps = ToolDeps(repo, knowledge, ("adversarial",) if adversarial else ())
+    def make(
+        agent_id: str,
+        *,
+        user: UserIdentity = analyst,
+        adversarial: bool = False,
+        scope: CaseScope = scope_001,
+        round_: int = 1,
+        events: EventLog | None = None,
+        evidence: EvidenceRegistry | None = None,
+    ):
+        events = events if events is not None else EventLog("case-test")
+        evidence = evidence if evidence is not None else EvidenceRegistry()
+        deps = ToolDeps(repo, knowledge, ("adversarial",) if adversarial else (), agent_id=agent_id, round=round_)
         return Toolbox(make_ctx(user, agent_id, scope), cards[agent_id], deps, events, evidence)
 
     return make
