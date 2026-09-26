@@ -321,14 +321,32 @@ async def test_structuring_least_privilege_and_catalog_validation(registry, tool
     assert denied == []  # gather fixo não tenta nada fora do card
 
 
-async def test_structuring_fails_when_fewer_than_two_valid(registry, toolbox_factory, analyst, scope_001):
+async def test_structuring_invalid_output_is_sent_back_once_then_accepted(registry, toolbox_factory, analyst, scope_001):
+    bad = [_alt(1), _alt(2, product="PROD-FAKE")]
+    good = [_alt(1), _alt(2)]
+    provider = FakeProvider(
+        json.dumps({"alternatives": bad, "comparison_notes": "", "evidence_ids": []}),
+        json.dumps({"alternatives": good, "comparison_notes": "", "evidence_ids": []}),
+    )
+    result, events, _ = await _run(registry, toolbox_factory, analyst, scope_001, "agro_structuring", provider)
+    assert [a["id"] for a in result.output["alternatives"]] == ["ALT-1", "ALT-2"]
+    assert result.usage.tokens_in == 2  # uso das 2 chamadas somado
+    assert len(provider.calls) == 2
+    feedback = provider.calls[1][-1].content
+    assert "PROD-FAKE" in feedback and "catálogo" in feedback
+    rejected = events.of_type(EventType.OUTPUT_REJECTED)
+    assert len(rejected) == 1 and rejected[0].payload["retry"] is True and rejected[0].audit
+
+
+async def test_structuring_fails_when_fewer_than_two_valid_after_retry(registry, toolbox_factory, analyst, scope_001):
     alts = [_alt(1), _alt(2, product="PROD-FAKE")]
     provider = FakeProvider(
         json.dumps({"alternatives": alts, "comparison_notes": "", "evidence_ids": []}),
         json.dumps({"alternatives": alts, "comparison_notes": "", "evidence_ids": []}),
     )
-    with pytest.raises(Exception):  # noqa: B017 - StructuringValidationError propaga pelo runtime
+    with pytest.raises(AgentExecutionError, match="output_validation_failed.*PROD-FAKE"):
         await _run(registry, toolbox_factory, analyst, scope_001, "agro_structuring", provider)
+    assert len(provider.calls) == 2
 
 
 async def test_review_ai_findings_require_evidence(registry, toolbox_factory, analyst, scope_001):

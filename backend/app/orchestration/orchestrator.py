@@ -297,7 +297,12 @@ class Orchestrator:
         toolbox = Toolbox(ctx, agent.card, deps, rec.events, rec.evidence)
 
         self._set_agent(rec, step.agent_id, AgentStatus.running, round_)
-        result = await self._runtime.run(agent, ctx, task, toolbox, rec.events, rec.evidence)
+        try:
+            result = await self._runtime.run(agent, ctx, task, toolbox, rec.events, rec.evidence)
+        except AgentExecutionError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — falha do agente vira erro auditável atribuído a ele
+            raise AgentExecutionError(step.agent_id, f"{type(exc).__name__}: {str(exc)[:300]}") from exc
         self._set_agent(rec, step.agent_id, AgentStatus.completed, round_, summary=_summary(result), result=result)
         self._refresh_counters(rec, result)
         rec.touch()

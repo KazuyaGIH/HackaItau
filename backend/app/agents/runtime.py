@@ -3,12 +3,13 @@
 O LLM só vê o EvidenceBundle; só o runtime cria OUT-*; IDs não fornecidos ao agente são removidos (GROUNDING_REJECTED).
 """
 
+import json
 import time
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from app.agents.base import Agent, PromptParts
+from app.agents.base import Agent, OutputValidationError, ValidatedOutput
 from app.core.events import EventLog
 from app.core.evidence import EvidenceRegistry
 from app.core.schemas.agent import AgentResult, LLMUsage, TaskSpec
@@ -97,26 +98,54 @@ class AgentRuntime:
                 bundle.upstream_outputs.append(rec)
         tool_calls = len(events.of_type(EventType.TOOL_CALLED)) - tools_before
 
-        # 2. reason — uma chamada, sem tools
+        # 2. reason — uma chamada, sem tools; 3. validate — grounding + regras do agente.
+        # Se validate rejeitar, os problemas voltam ao modelo uma vez (mesma evidência, sem novas tools).
         prompt = agent.build_prompt(ctx, task, bundle)
         schema = OUTPUT_SCHEMAS[prompt.response_schema]
-        raw, usage = await self._reason(agent_id, task, prompt, schema, events)
-
-        # 3. validate — grounding + regras do agente
-        cleaned, rejected = ground(raw, bundle.allowed_ids())
-        if rejected:
-            events.emit(
-                EventType.GROUNDING_REJECTED,
-                {"rejected_ids": sorted(set(rejected))},
-                agent_id=agent_id,
-                task_id=task.task_id,
-            )
-        try:
-            model_out = schema.model_validate(cleaned)
-        except ValidationError as exc:
-            raise AgentExecutionError(agent_id, f"output inválido após grounding: {exc.error_count()} erro(s)") from exc
-
-        validated = agent.validate(ctx, task, model_out, bundle)
+        messages = prompt.messages()
+        usage = LLMUsage(model=self.model)
+        rejected: list[str] = []
+        validated: ValidatedOutput | None = None
+        for attempt in range(2):
+            raw, call_usage = await self._reason(agent_id, task, messages, schema, events)
+            usage = _merge_usage(usage, call_usage)
+            cleaned, rejected = ground(raw, bundle.allowed_ids())
+            if rejected:
+                events.emit(
+                    EventType.GROUNDING_REJECTED,
+                    {"rejected_ids": sorted(set(rejected))},
+                    agent_id=agent_id,
+                    task_id=task.task_id,
+                )
+            try:
+                model_out = schema.model_validate(cleaned)
+            except ValidationError as exc:
+                raise AgentExecutionError(agent_id, f"output inválido após grounding: {exc.error_count()} erro(s)") from exc
+            try:
+                validated = agent.validate(ctx, task, model_out, bundle)
+                break
+            except OutputValidationError as exc:
+                events.emit(
+                    EventType.OUTPUT_REJECTED,
+                    {"attempt": attempt + 1, "problems": exc.problems, "retry": attempt == 0},
+                    agent_id=agent_id,
+                    task_id=task.task_id,
+                )
+                if attempt == 1:
+                    raise AgentExecutionError(
+                        agent_id, f"output_validation_failed: {_short('; '.join(exc.problems), 300)}"
+                    ) from exc
+                messages = messages + [
+                    Message(role="assistant", content=json.dumps(raw, ensure_ascii=False)),
+                    Message(
+                        role="user",
+                        content="O backend rejeitou sua resposta na validação determinística:\n- "
+                        + "\n- ".join(exc.problems)
+                        + "\nCorrija usando SOMENTE as evidências, IDs e itens de catálogo fornecidos e devolva "
+                        "SOMENTE o JSON completo, conforme o schema.",
+                    ),
+                ]
+        assert validated is not None
         out_id = output_id(agent_id, task.round)
         evidence.register(AgentOutputRecord(id=out_id, agent_id=agent_id, round=task.round, output=validated.output))
 
@@ -154,14 +183,13 @@ class AgentRuntime:
         self,
         agent_id: str,
         task: TaskSpec,
-        prompt: PromptParts,
+        messages: list[Message],
         schema: type[BaseModel],
         events: EventLog,
     ) -> tuple[dict[str, Any], LLMUsage]:
         if self.provider is None:
             raise AgentExecutionError(agent_id, "llm_unconfigured: defina LLM_API_KEY no .env")
 
-        messages = prompt.messages()
         retries = 0
         usage = LLMUsage(model=self.model)
         for attempt in range(2):
@@ -208,3 +236,13 @@ class AgentRuntime:
 
 def _short(text: str, limit: int = 600) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _merge_usage(total: LLMUsage, call: LLMUsage) -> LLMUsage:
+    return LLMUsage(
+        model=call.model or total.model,
+        tokens_in=total.tokens_in + call.tokens_in,
+        tokens_out=total.tokens_out + call.tokens_out,
+        latency_ms=total.latency_ms + call.latency_ms,
+        retries=total.retries + call.retries,
+    )
