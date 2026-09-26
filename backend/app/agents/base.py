@@ -32,6 +32,14 @@ class ToolboxLike(Protocol):
     async def call(self, tool_name: str, **params: Any) -> ToolResult: ...
 
 
+class OutputValidationError(Exception):
+    """Agent.validate rejeitou a saída do LLM. O runtime devolve os problemas ao modelo uma vez; depois falha auditado."""
+
+    def __init__(self, problems: list[str]) -> None:
+        super().__init__("; ".join(problems))
+        self.problems = problems
+
+
 class ValidatedOutput(BaseModel):
     """Retorno de Agent.validate. O runtime completa usage, output_id, evidence_ids e registra OUT-*."""
 

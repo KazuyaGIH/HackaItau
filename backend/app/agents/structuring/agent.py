@@ -8,7 +8,7 @@ import re
 
 from pydantic import BaseModel
 
-from app.agents.base import BaseAgent, ValidatedOutput
+from app.agents.base import BaseAgent, OutputValidationError, ValidatedOutput
 from app.core.schemas.agent import TaskSpec
 from app.core.schemas.context import ExecutionContext
 from app.core.schemas.evidence import EvidenceBundle
@@ -21,10 +21,8 @@ PREFERENCE_RE = re.compile(
 )
 
 
-class StructuringValidationError(Exception):
-    def __init__(self, problems: list[str]) -> None:
-        super().__init__("; ".join(problems))
-        self.problems = problems
+class StructuringValidationError(OutputValidationError):
+    pass
 
 
 class StructuringAgent(BaseAgent):
