@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: float = 60.0
+    llm_max_retries: int = 5
+    llm_retry_backoff_seconds: float = 2.0
 
     demo_mode: bool = True
     frontend_dist: Path = REPO_ROOT / "frontend" / "dist"

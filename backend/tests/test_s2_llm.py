@@ -14,7 +14,9 @@ KEY = "sk-test-SECRET-123"
 
 
 def _provider(handler) -> OpenAICompatProvider:
-    return OpenAICompatProvider("https://llm.local/v1", KEY, 5.0, [KEY], transport=httpx.MockTransport(handler))
+    return OpenAICompatProvider(
+        "https://llm.local/v1", KEY, 5.0, [KEY], transport=httpx.MockTransport(handler), backoff_seconds=0.0
+    )
 
 
 def _ok(content: str, model: str = "m"):
@@ -68,12 +70,39 @@ async def test_provider_http_error_and_transport_error_become_llm_error():
     with pytest.raises(LLMError) as exc:
         await _provider(bad).complete(model="m", messages=[Message(role="user", content="hi")])
     assert KEY not in str(exc.value)
+    assert "boom" in str(exc.value)
 
     def down(req: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("down")
 
     with pytest.raises(LLMError):
         await _provider(down).complete(model="m", messages=[Message(role="user", content="hi")])
+
+
+async def test_provider_retries_overload_then_succeeds():
+    calls: list[int] = []
+    ok = _ok('{"a": 1}')
+
+    def flaky(req: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) <= 2:
+            return httpx.Response(503, json=[{"error": {"message": "high demand", "code": 503}}])
+        return ok(req)
+
+    resp = await _provider(flaky).complete(model="m", messages=[Message(role="user", content="hi")])
+    assert resp.content == '{"a": 1}' and len(calls) == 3
+
+
+async def test_provider_does_not_retry_client_errors():
+    calls: list[int] = []
+
+    def bad_request(req: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(400, json={"error": {"message": "invalid model"}})
+
+    with pytest.raises(LLMError, match="invalid model"):
+        await _provider(bad_request).complete(model="m", messages=[Message(role="user", content="hi")])
+    assert len(calls) == 1
 
 
 def test_wrap_untrusted_and_extract_json():

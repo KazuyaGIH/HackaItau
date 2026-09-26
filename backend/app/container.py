@@ -30,6 +30,8 @@ def build_provider(s: Settings) -> LLMProvider | None:
         api_key=s.llm_api_key,
         timeout_seconds=s.llm_timeout_seconds,
         secret_values=s.secret_values(),
+        max_retries=s.llm_max_retries,
+        backoff_seconds=s.llm_retry_backoff_seconds,
     )
 
 
