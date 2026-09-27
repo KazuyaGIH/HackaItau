@@ -80,6 +80,17 @@ Outros comandos úteis:
 
 Sem chave, o backend pode iniciar e receber demandas, mas recusa a execução da squad com `llm_not_configured`. A interface exibe um aviso. Os testes automatizados usam respostas simuladas de modelo e não precisam de uma chave real.
 
+### Publicar com um link (Docker)
+
+O [Dockerfile](Dockerfile) gera uma imagem única: compila o frontend e inicia o FastAPI servindo API e interface na porta `PORT` (padrão 8000). A chave **não** entra na imagem nem no repositório: as mesmas variáveis do `.env` são lidas do ambiente do container.
+
+```bash
+docker build -t agent-squads .
+docker run -p 8000:8000 -e LLM_API_KEY=... -e LLM_BASE_URL=... -e LLM_MODEL=... agent-squads
+```
+
+Em serviços como Render ou Railway, conecte o repositório do GitHub, escolha o build por Dockerfile e informe `LLM_API_KEY`, `LLM_BASE_URL` e `LLM_MODEL` no painel de variáveis de ambiente. O [render.yaml](render.yaml) descreve esse serviço para o Render (New + › Blueprint), pedindo essas três variáveis na criação. O estado dos casos continua em memória: reiniciar ou hibernar o serviço apaga as conversas.
+
 ## 3. Primeira análise, passo a passo
 
 ### Descreva a demanda
