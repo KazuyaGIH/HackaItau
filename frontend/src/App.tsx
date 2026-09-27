@@ -14,7 +14,22 @@ export default function App() {
   const [llmReady, setLlmReady] = useState<boolean | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => !narrow())
   const [panel, setPanel] = useState<PanelView | null>(null)
+  const [reportFullscreen, setReportFullscreen] = useState(false)
   const [view, setView] = useState<'chat' | 'performance'>('chat')
+
+  const closePanel = () => {
+    setPanel(null)
+    setReportFullscreen(false)
+  }
+
+  useEffect(() => {
+    if (!reportFullscreen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setReportFullscreen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [reportFullscreen])
 
   useEffect(() => {
     api.health().then(
@@ -29,6 +44,7 @@ export default function App() {
   if (panelCase !== caseId) {
     setPanelCase(caseId)
     setPanel(null)
+    setReportFullscreen(false)
   }
 
   const panelApi = useMemo<PanelApi>(
@@ -37,7 +53,7 @@ export default function App() {
       view: panel,
       open: setPanel,
       openEvidence: (id) => setPanel((v) => ({ kind: 'evidence', id, back: v?.kind === 'evidence' ? v.back : v })),
-      close: () => setPanel(null),
+      close: closePanel,
     }),
     [caseId, panel],
   )
@@ -50,7 +66,11 @@ export default function App() {
 
   return (
     <PanelContext.Provider value={panelApi}>
-      <div className={`app${sidebarOpen ? ' with-sidebar' : ''}${panel ? ' with-panel' : ''}`}>
+      <div
+        className={`app${sidebarOpen ? ' with-sidebar' : ''}${panel ? ' with-panel' : ''}${
+          panel && reportFullscreen && view === 'chat' ? ' report-fullscreen' : ''
+        }`}
+      >
         {sidebarOpen && (
           <>
             <div className="scrim sidebar-scrim" onClick={() => setSidebarOpen(false)} />
@@ -68,7 +88,7 @@ export default function App() {
               }}
               onPerformance={() => {
                 setView('performance')
-                setPanel(null)
+                closePanel()
                 if (narrow()) setSidebarOpen(false)
               }}
               performanceActive={view === 'performance'}
@@ -89,8 +109,10 @@ export default function App() {
             state={ws.caseData?.state ?? null}
             events={ws.caseData?.events ?? []}
             reports={ws.caseData?.reports ?? {}}
+            fullscreen={reportFullscreen}
+            onToggleFullscreen={() => setReportFullscreen((f) => !f)}
             onNavigate={setPanel}
-            onClose={() => setPanel(null)}
+            onClose={closePanel}
           />
         )}
       </div>
