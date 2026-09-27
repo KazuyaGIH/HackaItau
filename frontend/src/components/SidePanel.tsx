@@ -92,7 +92,7 @@ export function SidePanel({
     const article = bodyRef.current?.querySelector<HTMLElement>('article.doc')
     if (!article) return
     const heading = article.querySelector('h2')?.textContent?.trim() || 'Relatório'
-    downloadReportHtml(article, { title: `Relatório - ${heading}`, caseId })
+    void downloadReportHtml(article, { title: `Relatório - ${heading}`, caseId })
   }
 
   return (
