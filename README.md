@@ -1,5 +1,8 @@
 # Hackathon Itaú 2026 — Agent Squad para Crédito Agro
 
+**Uso e evidências:** [Guia de uso](GUIA_DE_USO.md) · [Como calculamos os valores do comparativo](BENCHMARK_RECALCULO.md) · [Protocolo do benchmark](BENCHMARK.md). Para conferir os números sem chamar a API: `make benchmark-audit`.
+
+
 > Documento funcional do MVP para orientar arquitetura e implementação.
 >
 > O objetivo deste README é definir **o comportamento que precisa ser demonstrado**, os agentes, os guardrails e as propriedades de segurança do sistema.
