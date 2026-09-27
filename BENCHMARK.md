@@ -83,6 +83,11 @@ Cada execução cria `artifacts/evaluations/<data>/`. Os arquivos sobrevivem a r
 pelo Git. O painel **Desempenho dos agentes** lê o resumo mais recente, inclusive enquanto parcial,
 por `GET /api/benchmarks/latest`; atualizar a página não inicia chamadas pagas.
 
+Sem resultados locais, a API usa o [resumo publicado](backend/app/evaluation/published/README.md)
+versionado no repositório. A tela identifica esse resultado como **Benchmark publicado**, com data.
+Assim, outros clones preservam o comparativo já executado sem chamadas pagas. Novas execuções locais
+válidas têm prioridade; os traces individuais continuam fora do Git.
+
 | Arquivo | Conteúdo |
 |---|---|
 | `REPORT.md` | Tabela de consumo, restrições atendidas e avaliação |

@@ -55,7 +55,9 @@ function Comparison({ data }: { data: BenchmarkSummary }) {
 
   return <>
     <p className="muted small">
-      Execuções reais{sameSample ? ` · ${squad?.runs} casos sintéticos por configuração` : ' · amostras por configuração abaixo'}
+      {data.published_snapshot ? 'Benchmark publicado' : 'Execuções reais'}
+      {` · ${new Date(data.created_at).toLocaleDateString('pt-BR')}`}
+      {sameSample ? ` · ${squad?.runs} casos sintéticos por configuração` : ' · amostras por configuração abaixo'}
       {complete ? '' : ' · resultado parcial'}.
     </p>
     {savings !== null && <div className="perf-hero benchmark-hero">

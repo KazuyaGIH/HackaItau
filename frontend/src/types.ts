@@ -466,6 +466,7 @@ export interface CaseState {
   analyst_context: Record<string, string>
 }
 export interface BenchmarkSummary {
+  published_snapshot?: boolean
   version: number
   run_id: string
   created_at: string

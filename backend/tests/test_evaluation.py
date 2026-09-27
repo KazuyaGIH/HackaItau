@@ -254,7 +254,9 @@ def test_latest_benchmark_endpoint_is_read_only_and_handles_empty_or_invalid_fil
     from app.container import build_container, get_container
     from app.main import app
 
-    c = build_container(Settings(llm_api_key="", benchmark_results_dir=tmp_path, _env_file=None))
+    c = build_container(
+        Settings(llm_api_key="", benchmark_results_dir=tmp_path, benchmark_snapshot_file=None, _env_file=None)
+    )
     app.dependency_overrides[get_container] = lambda: c
     try:
         with TestClient(app) as client:
@@ -267,6 +269,33 @@ def test_latest_benchmark_endpoint_is_read_only_and_handles_empty_or_invalid_fil
             newer.mkdir()
             (newer / "summary.json").write_text("[")
             assert client.get("/api/benchmarks/latest").json() == {"benchmark": summary}
+            assert len(c.store) == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_published_benchmark_is_available_without_local_runs_and_local_results_take_priority(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.container import build_container, get_container
+    from app.main import app
+
+    c = build_container(Settings(llm_api_key="", benchmark_results_dir=tmp_path / "absent", _env_file=None))
+    app.dependency_overrides[get_container] = lambda: c
+    try:
+        with TestClient(app) as client:
+            published = client.get("/api/benchmarks/latest").json()["benchmark"]
+            assert published["published_snapshot"] is True
+            assert published["completed_runs"] == 48
+            assert len(published["groups"]) == 6
+            assert published["quality_status"] == "pending_human_review"
+            local_dir = c.settings.benchmark_results_dir / "20260928"
+            local_dir.mkdir(parents=True)
+            local = {"version": 1, "groups": [], "status": "partial"}
+            (local_dir / "summary.json").write_text(json.dumps(local))
+            assert client.get("/api/benchmarks/latest").json() == {"benchmark": local}
+            (local_dir / "summary.json").write_text("invalid")
+            assert client.get("/api/benchmarks/latest").json()["benchmark"] == published
             assert len(c.store) == 0
     finally:
         app.dependency_overrides.clear()

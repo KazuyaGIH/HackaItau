@@ -69,7 +69,7 @@ def metrics(c: Deps) -> dict:
 @router.get("/benchmarks/latest")
 def benchmark_latest(c: Deps) -> dict:
     """Resumo do comparativo executado pelo CLI, independente dos cases em memória."""
-    return {"benchmark": latest_summary(c.settings.benchmark_results_dir)}
+    return {"benchmark": latest_summary(c.settings.benchmark_results_dir, c.settings.benchmark_snapshot_file)}
 
 
 @router.post("/cases", response_model=CaseState, status_code=201)
