@@ -47,6 +47,22 @@ async def test_provider_json_mode_no_tools_and_usage():
     assert resp.usage.tokens_in == 11 and resp.usage.tokens_out == 7
 
 
+@pytest.mark.parametrize("effort", [None, "none", "medium", "high"])
+async def test_reasoning_configuration_omits_incompatible_temperature(effort):
+    h = _ok("{}")
+    provider = OpenAICompatProvider(
+        "https://llm.local/v1",
+        KEY,
+        5,
+        [KEY],
+        transport=httpx.MockTransport(h),
+        reasoning_effort=effort,
+    )
+    await provider.complete(model="test", messages=[Message(role="user", content="JSON")])
+    assert ("temperature" in h.body) == (effort in (None, "none"))
+    assert h.body.get("reasoning_effort") == effort
+
+
 async def test_provider_rejects_dynamic_tools():
     with pytest.raises(LLMError):
         await _provider(_ok("x")).complete(

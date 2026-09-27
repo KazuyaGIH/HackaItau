@@ -158,6 +158,10 @@ export interface AgentMetrics {
   runs: number
   completed: number
   failed: number
+  in_progress: number
+  completion_pct: number | null
+  validation_clean: number
+  validation_first_pass_pct: number | null
   hits: number
   validator_fixes: number
   reopened_by_review: number
@@ -452,4 +456,34 @@ export interface CaseState {
   open_questions: OpenQuestion[]
   attachments: AttachmentView[]
   analyst_context: Record<string, string>
+}
+export interface BenchmarkSummary {
+  version: number
+  run_id: string
+  created_at: string
+  status: 'complete' | 'partial'
+  planned_runs: number
+  completed_runs: number
+  quality_status: 'reviewed' | 'pending_human_review'
+  conclusion: string
+  groups: {
+    architecture: 'squad' | 'generalist'
+    model_label: string
+    model: string
+    reasoning_effort?: string | null
+    runs: number
+    automatic_passes: number
+    errors: number
+    reviewed: number
+    accepted: number | null
+    accepted_rate: number | null
+    accepted_rate_ci95: [number, number] | null
+    calls: number
+    tokens_in: number
+    tokens_out: number
+    usage_complete: boolean
+    total_cost_usd: number | null
+    cost_per_accepted_usd: number | null
+    mean_latency_seconds: number
+  }[]
 }

@@ -10,9 +10,10 @@ import re
 from pydantic import BaseModel
 
 from app.agents.base import BaseAgent, ToolboxLike, ValidatedOutput, gather_required_data
-from app.agents.risk.baseline import Baseline, BaselineError, BaselinePolicy, build_baseline
+from app.agents.risk.baseline import Baseline, BaselineError, BaselineSelection, build_baseline
 from app.calculations.credit_metrics import repayment_capacity, risk_summary
 from app.calculations.policy_params import load_policy_params
+from app.core.crops import normalize_crop
 from app.core.schemas.agent import AgentCard, TaskSpec
 from app.core.schemas.context import ExecutionContext
 from app.core.schemas.evidence import CalculationRecord, EvidenceBundle
@@ -29,24 +30,27 @@ class RiskAgentError(Exception):
 class RiskAgent(BaseAgent):
     def __init__(self, card: AgentCard) -> None:
         super().__init__(card)
-        self._baselines: dict[str, Baseline] = {}
+        self._baselines: dict[tuple[str, str], Baseline] = {}
 
-    def _policy(self, task: TaskSpec) -> BaselinePolicy:
+    def _policy(self, task: TaskSpec) -> BaselineSelection:
         if task.rework and task.rework.params.get("baseline_policy") == "historical":
             return "historical"
-        return "declared"
+        return "auto"
 
     async def gather(self, ctx: ExecutionContext, task: TaskSpec, toolbox: ToolboxLike) -> EvidenceBundle:
         bundle = await gather_required_data(self.card, ctx, task, toolbox)
         requested = task.inputs.get("requested_amount")
         if requested is None:
             raise RiskAgentError("requested_amount ausente nos inputs do task")
+        crop = normalize_crop(task.inputs.get("crop"))
+        if not crop:
+            raise RiskAgentError("cultura ausente nos inputs do task")
         policy = load_policy_params()
         try:
-            baseline = build_baseline(bundle, float(requested), policy.thresholds, self._policy(task))
+            baseline = build_baseline(bundle, float(requested), policy.thresholds, self._policy(task), requested_crop=crop)
         except BaselineError as exc:
             raise RiskAgentError(str(exc)) from exc
-        self._baselines[task.task_id] = baseline
+        self._baselines[ctx.case_id, task.task_id] = baseline
 
         params = baseline.params.model_dump()
         metrics = await toolbox.call("calculate_credit_metrics", assumptions=params)
@@ -63,7 +67,7 @@ class RiskAgent(BaseAgent):
         llm = RiskLLMOutput.model_validate(raw_output.model_dump())
         calc_m = _calc(evidence, CALC_CREDIT_METRICS)
         calc_s = _calc(evidence, CALC_STRESS)
-        baseline = self._baselines.pop(task.task_id, None)
+        baseline = self._baselines.pop((ctx.case_id, task.task_id), None)
         if baseline is None:
             raise RiskAgentError("baseline não encontrado para o task")
         thresholds = load_policy_params().thresholds

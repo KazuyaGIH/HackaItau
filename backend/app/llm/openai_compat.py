@@ -35,6 +35,7 @@ class OpenAICompatProvider:
         transport: httpx.AsyncBaseTransport | None = None,
         max_retries: int = 5,
         backoff_seconds: float = 2.0,
+        reasoning_effort: str | None = None,
     ) -> None:
         if not api_key:
             raise LLMError("LLM_API_KEY ausente")
@@ -45,6 +46,7 @@ class OpenAICompatProvider:
         self._transport = transport
         self._max_retries = max_retries
         self._backoff = backoff_seconds
+        self._reasoning_effort = reasoning_effort
 
     def _check_secrets(self, messages: list[Message]) -> None:
         for m in messages:
@@ -66,9 +68,13 @@ class OpenAICompatProvider:
         self._check_secrets(messages)
         body: dict = {
             "model": model,
-            "temperature": temperature,
             "messages": [m.model_dump() for m in messages],
         }
+        if self._reasoning_effort is not None:
+            body["reasoning_effort"] = self._reasoning_effort
+        # GPT-5.2 com raciocínio não aceita temperature; sem configuração mantém o comportamento anterior.
+        if self._reasoning_effort in (None, "none"):
+            body["temperature"] = temperature
         if response_schema is not None:
             body["response_format"] = {"type": "json_object"}
 
@@ -90,6 +96,8 @@ class OpenAICompatProvider:
                 model=data.get("model", model),
                 tokens_in=int(usage.get("prompt_tokens", 0)),
                 tokens_out=int(usage.get("completion_tokens", 0)),
+                tokens_cached=int((usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)),
+                usage_reported="prompt_tokens" in usage and "completion_tokens" in usage,
                 latency_ms=latency,
             ),
         )

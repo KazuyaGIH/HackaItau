@@ -27,6 +27,7 @@ class QueryParams(BaseModel):
 
 class PurposeParams(BaseModel):
     purpose: str
+    crop: str | None = None
 
 
 class HistoricalFilters(BaseModel):

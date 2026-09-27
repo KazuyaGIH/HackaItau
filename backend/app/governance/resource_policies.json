@@ -50,6 +50,7 @@
   "market_data": {
     "row_scope": "none",
     "fields": {
+      "agro_eligibility": ["commodity", "unit"],
       "agro_credit_risk": ["commodity", "reference_price", "unit", "currency", "price_date", "trend_note", "volatility_note"]
     },
     "never": ["trader_desk_notes"]
@@ -75,6 +76,7 @@
         "product_id",
         "name",
         "purpose",
+        "supported_crops",
         "min_amount",
         "max_amount",
         "tenor_months_min",

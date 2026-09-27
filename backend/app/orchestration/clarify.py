@@ -101,15 +101,17 @@ def client_from_text(text: str) -> str:
 def answers_from_text(text: str, items: list[str]) -> dict[str, Any]:
     """Resposta livre a um pedido de informação → answers por item pedido + refinamentos reconhecidos."""
     answers: dict[str, Any] = {}
+    h = heuristic_interpret(text)
     for item in items:
         if item in ("client_ref", "client_id"):
             answers[item] = client_from_text(text)
         elif item == "requested_amount":
             if (amount := parse_amount(text, bare_number_ok=True)) is not None:
                 answers[item] = amount
+        elif item == "crop":
+            answers[item] = h.crop or text.strip()
         else:
             answers[item] = text.strip()
-    h = heuristic_interpret(text)
     for key in ("purpose", "crop", "cycle"):
         if (value := getattr(h, key)) and key not in answers:
             answers[key] = value

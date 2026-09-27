@@ -1,5 +1,6 @@
 import type {
   AssistReply,
+  BenchmarkSummary,
   CaseEvent,
   CaseState,
   CreateCaseRequest,
@@ -57,6 +58,7 @@ export const api = {
   assist: (body: { user_id: string; text: string; case_id?: string | null }) =>
     post('/api/assist', body).then(json<AssistReply>),
   metrics: () => fetch('/api/metrics').then(json<Metrics>),
+  benchmark: () => fetch('/api/benchmarks/latest').then(json<{ benchmark: BenchmarkSummary | null }>),
   report: (id: string) => fetch(`/api/cases/${id}/report`).then(json<Report>),
   evidence: (id: string, evidenceId: string) =>
     fetch(`/api/cases/${id}/evidence/${encodeURIComponent(evidenceId)}`).then(json<EvidenceItem>),

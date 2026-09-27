@@ -608,6 +608,7 @@ class Orchestrator:
             events=rec.events,
             policy=load_policy_params(),
             requested_amount=rec.state.interpreted.requested_amount,
+            requested_crop=rec.state.interpreted.crop,
         )
         validator_findings = _tag_round(run_validators(ctx), round_)
 

@@ -3,6 +3,7 @@
   "records": [
     {
       "product_id": "PROD-CUSTEIO-01",
+      "supported_crops": ["soja", "milho"],
       "name": "Custeio Agro Safra (mock)",
       "purpose": "custeio",
       "min_amount": 1000000,
@@ -19,6 +20,7 @@
     },
     {
       "product_id": "PROD-CPR-02",
+      "supported_crops": ["soja"],
       "name": "CPR Financeira Soja (mock)",
       "purpose": "custeio",
       "min_amount": 5000000,
@@ -35,6 +37,7 @@
     },
     {
       "product_id": "PROD-CUSTEIO-TRANCHE-03",
+      "supported_crops": ["soja", "milho"],
       "name": "Custeio em Tranches com Gatilhos (mock)",
       "purpose": "custeio",
       "min_amount": 10000000,

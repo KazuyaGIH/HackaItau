@@ -212,6 +212,9 @@ export function naturalQuestion(reason: string, items: string[]): { lead: string
   }
   const asks = items.map((item) => {
     if (item === 'requested_amount') return 'Qual o valor que o cliente está pedindo? A política exige no mínimo R$ 1 milhão.'
+    if (item === 'crop') return 'Confirme a cultura do pedido. Ela precisa corresponder ao perfil agro do cliente.'
+    if (item === 'planting_plan_crop') return 'O plano de plantio precisa identificar a mesma cultura da operação.'
+    if (item === 'market_data') return 'Falta uma referência de mercado compatível na base autorizada; uma resposta em texto não substitui a cotação.'
     if (DOC_LABEL[item]) {
       return `Falta ${DOC_LABEL[item]}. Pode anexar o arquivo aqui na conversa ou me contar a situação desse documento.`
     }

@@ -13,7 +13,7 @@ export interface Starter {
 export const STARTERS: Starter[] = [
   {
     label: 'Custeio de soja da Fazenda Horizonte',
-    hint: 'Fluxo completo, com revisão e retrabalho',
+    hint: 'Premissas verificadas antes da análise e revisão independente',
     prompt: DEFAULT_PROMPT,
   },
   {

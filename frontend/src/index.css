@@ -464,6 +464,28 @@ pre.formula { white-space: pre-wrap; word-break: break-word; color: var(--ink-2)
 .kpi-note { font-size: 12.5px; color: var(--ink-3); line-height: 1.4; }
 .perf-section { display: flex; flex-direction: column; gap: 10px; }
 .perf-section h2 { font-size: 17px; }
+.benchmark { gap: 16px; }
+.benchmark-hero { padding: 12px 0 6px; }
+.benchmark-hero .hero-figure { color: var(--navy); }
+.benchmark-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.benchmark-card { border: 1px solid var(--line); border-top: 3px solid #8e98a5; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.benchmark-card.squad { border-top-color: var(--navy); background: var(--navy-tint); }
+.benchmark-card.medium { border-top-color: #bd8530; }
+.benchmark-card h3 { font-size: 16px; }
+.benchmark-score { font-size: 34px; font-weight: 600; line-height: 1.2; }
+.benchmark-score span { font-size: 16px; font-weight: 400; color: var(--ink-2); }
+.benchmark-verdict { font-size: 12.5px; color: var(--navy); }
+.benchmark-verdict.inferior { color: var(--warn); }
+.benchmark-stats { margin: auto 0 0; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.benchmark-stats > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; font-size: 13px; }
+.benchmark-stats dt { color: var(--ink-2); }
+.benchmark-stats dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.benchmark-chart figcaption { display: flex; flex-direction: column; gap: 2px; }
+.benchmark-chart figcaption > span { font-size: 12px; font-weight: 400; color: var(--ink-3); }
+.benchmark-bar-row { display: grid; grid-template-columns: 100px minmax(0, 1fr) 84px; gap: 8px; align-items: center; }
+.benchmark-bar-row .bar-value { text-align: right; }
+.benchmark-bar-track { border-left: 1px solid var(--line); padding: 4px 0; }
+.bar.medium { background: #bd8530; }
 .legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .key { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
@@ -513,6 +535,7 @@ pre.formula { white-space: pre-wrap; word-break: break-word; color: var(--ink-2)
   .hero-figure { font-size: 40px; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .compare, .agent-cards { grid-template-columns: 1fr; }
+  .benchmark-cards { grid-template-columns: 1fr; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

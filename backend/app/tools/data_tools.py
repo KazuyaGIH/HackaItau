@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from app.core.crops import normalize_crop, product_supports_crop
 from app.tools.deps import ToolDeps
 from app.tools.registry import register_handler
 
@@ -25,7 +26,7 @@ async def get_agro_profile(params: dict[str, Any], deps: ToolDeps) -> Records:
 
 
 async def get_market_data(params: dict[str, Any], deps: ToolDeps) -> Records:
-    return _as_list(deps.repo.get_market_data(params["commodity"]))
+    return _as_list(deps.repo.get_market_data(normalize_crop(params["commodity"])))
 
 
 async def get_available_documents(params: dict[str, Any], deps: ToolDeps) -> Records:
@@ -35,7 +36,10 @@ async def get_available_documents(params: dict[str, Any], deps: ToolDeps) -> Rec
 
 
 async def get_product_catalog(params: dict[str, Any], deps: ToolDeps) -> Records:
-    return deps.repo.list_products(params["purpose"])
+    products = deps.repo.list_products(params["purpose"])
+    if params.get("crop") is not None:
+        return [p for p in products if product_supports_crop(p, params["crop"])]
+    return products
 
 
 async def search_policy(params: dict[str, Any], deps: ToolDeps) -> Records:

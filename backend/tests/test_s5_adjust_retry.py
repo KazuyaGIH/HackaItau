@@ -17,6 +17,9 @@ from tests.fake_llm import StubProvider
 PROMPT = "O cliente Fazenda Horizonte S.A. solicita R$ 50 milhões para custeio da safra de soja 2025/26."
 ANALYST = "analyst-001"
 
+# Exercita recuperação DURANTE retrabalho, injetando a premissa inválida que hoje é prevenida.
+pytestmark = pytest.mark.usefixtures("unjustified_baseline")
+
 
 class FlakyProvider(StubProvider):
     """Falha (como um 429 do provider) na n-ésima chamada com o schema dado; depois responde normalmente."""

@@ -1,8 +1,9 @@
 """Desempenho dos agentes, calculado a partir do Event Log e dos resultados dos cases em memória.
 
 Definições (também exibidas na UI):
-- acerto: execução concluída que passou pelo validador de primeira e não foi devolvida pela revisão como responsável;
-- corrigida pelo validador: a saída veio fora do formato ou citou evidência inexistente e foi refeita/descartada;
+- conclusão: tentativa encerrada com AGENT_COMPLETED, inclusive após correção; não mede qualidade factual;
+- validação sem correções: execução concluída sem rejeição de saída/referências ou nova resposta do modelo;
+- correção e devolução são marcas da mesma tentativa e não são subtraídas duas vezes;
 - devolvida pela revisão: o Revisor reabriu a tarefa (retrabalho) com o agente como responsável;
 - falha: a execução parou com erro (ex.: provedor do modelo indisponível).
 - contexto: caracteres dos prompts realmente enviados (~4 caracteres por token) contra um agente generalista
@@ -10,6 +11,7 @@ Definições (também exibidas na UI):
 """
 
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any
 
 from app.agents.registry import AgentRegistry
@@ -21,6 +23,17 @@ from app.llm.prompting import UNTRUSTED_RULES, render_evidence, render_schema
 from app.orchestration.plans import REVIEW
 
 CHARS_PER_TOKEN = 4
+
+
+@dataclass
+class Attempt:
+    agent_id: str
+    task_id: str | None
+    completed: bool = False
+    failed: bool = False
+    corrected: bool = False
+    reopened: bool = False
+    calls: int = 0
 
 
 def _tokens(chars: int) -> int:
@@ -42,7 +55,9 @@ def compute_metrics(store: CaseStore, registry: AgentRegistry) -> dict[str, Any]
         cases += 1
         reports += rec.state.report is not None
         events = rec.events.list_after(0)
-        fixed_tasks: dict[str, str] = {}
+        attempts: list[Attempt] = []
+        active: dict[str, Attempt] = {}
+        latest_completed: dict[str, Attempt] = {}
         case_prompt_chars = case_calls = rounds = 0
         # achados materiais por rodada de revisão: (code, owner) — confirmados quando somem depois do retrabalho
         material_by_round: dict[int, set[tuple[str, str]]] = defaultdict(set)
@@ -57,19 +72,31 @@ def compute_metrics(store: CaseStore, registry: AgentRegistry) -> dict[str, Any]
                 rounds += 1
             if m is None:
                 continue
+            attempt = active.get(a)
             if e.type == EventType.AGENT_STARTED:
                 m["runs"] += 1
+                attempt = Attempt(str(a), e.task_id)
+                attempts.append(attempt)
+                active[str(a)] = attempt
             elif e.type == EventType.AGENT_COMPLETED:
                 m["completed"] += 1
                 m["tool_calls"] += int(p.get("tool_calls", 0))
+                if attempt is not None:
+                    attempt.completed = True
+                    latest_completed[str(a)] = attempt
             elif e.type in (EventType.OUTPUT_REJECTED, EventType.GROUNDING_REJECTED) and e.task_id:
-                fixed_tasks[e.task_id] = str(a)
+                if attempt is not None and attempt.task_id == e.task_id:
+                    attempt.corrected = True
             elif e.type == EventType.EXECUTION_FAILED:
                 m["failed"] += 1
+                if attempt is not None and not attempt.completed:
+                    attempt.failed = True
             elif e.type == EventType.PERMISSION_DENIED:
                 m["denied"] += 1
             elif e.type == EventType.TASK_REOPENED and a == p.get("action"):
                 m["adjusted_by_human" if p.get("source") == "human" else "reopened_by_review"] += 1
+                if p.get("source") != "human" and a in latest_completed:
+                    latest_completed[a].reopened = True
             elif e.type == EventType.REVIEW_ISSUE_FOUND:
                 m["findings_raised"] += 1
                 if p.get("severity") == "high":
@@ -79,6 +106,10 @@ def compute_metrics(store: CaseStore, registry: AgentRegistry) -> dict[str, Any]
                 m["reworks_triggered"] += 1
                 rework_rounds.append(rounds)
             elif e.type == EventType.LLM_CALLED and p.get("ok"):
+                if attempt is not None and attempt.task_id == e.task_id:
+                    attempt.calls += 1
+                    # Correções de schema também podem ocorrer sem um evento OUTPUT_REJECTED.
+                    attempt.corrected |= attempt.calls > 1
                 usage = p.get("usage") or {}
                 m["llm_calls"] += 1
                 m["tokens_in"] += int(usage.get("tokens_in", 0))
@@ -88,8 +119,14 @@ def compute_metrics(store: CaseStore, registry: AgentRegistry) -> dict[str, Any]
                 tokens_out += int(usage.get("tokens_out", 0))
                 case_prompt_chars += int(usage.get("prompt_chars", 0))
                 case_calls += 1
-        for agent_id in fixed_tasks.values():
-            agents[agent_id]["validator_fixes"] += 1
+        for attempt in attempts:
+            m = agents[attempt.agent_id]
+            if attempt.completed:
+                m["validator_fixes"] += int(attempt.corrected)
+                m["validation_clean"] += int(not attempt.corrected)
+                m["hits"] += int(not attempt.corrected and not attempt.reopened)
+            if not attempt.completed and not attempt.failed:
+                m["in_progress"] += 1
         for result in rec.completed.values():
             if result.agent_id in agents and result.usage.latency_ms:
                 agents[result.agent_id]["latencies"].append(result.usage.latency_ms)
@@ -157,7 +194,7 @@ def _agent_view(agent_id: str, m: dict[str, Any], registry: AgentRegistry) -> di
     completed, failed = m["completed"], m["failed"]
     reviewed = agent_id == REVIEW
     errors = m["reopened_by_review"] + failed
-    hits = max(0, completed - m["validator_fixes"] - m["reopened_by_review"])
+    hits = m["hits"]
     latencies = m["latencies"]
     return {
         "agent_id": agent_id,
@@ -171,11 +208,16 @@ def _agent_view(agent_id: str, m: dict[str, Any], registry: AgentRegistry) -> di
         "runs": m["runs"],
         "completed": completed,
         "failed": failed,
+        "in_progress": m["in_progress"],
+        "completion_pct": round(100 * completed / (completed + failed), 1) if completed + failed else None,
+        "validation_clean": m["validation_clean"],
+        "validation_first_pass_pct": round(100 * m["validation_clean"] / completed, 1) if completed else None,
         "hits": hits,
         "validator_fixes": m["validator_fixes"],
         "reopened_by_review": m["reopened_by_review"],
         "adjusted_by_human": m["adjusted_by_human"],
         "errors": errors,
+        # Alias legado: mede ausência de intervenções, nunca acurácia factual.
         "accuracy_pct": round(100 * hits / (completed + failed), 1) if completed + failed else None,
         "findings_owned": m["findings_owned"],
         "tool_calls": m["tool_calls"],

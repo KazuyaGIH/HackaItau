@@ -15,6 +15,7 @@ from app.agents.review.validators import (
     calc_inconsistent,
     evidence_not_found,
     permission_violation_attempted,
+    policy_threshold_breach,
     risk_ignored_by_structure,
     run_validators,
     structure_vs_request_and_catalog,
@@ -78,11 +79,37 @@ def _mutated(results: dict[str, AgentResult], agent_id: str, **changes) -> dict[
 
 
 @pytest.fixture
-async def pipeline(registry, toolbox_factory, analyst, scope_001):
+async def pipeline(registry, toolbox_factory, analyst, scope_001, unjustified_baseline):
+    # O Review deve continuar detectando uma premissa inválida mesmo após a prevenção no Risk.
     return await _pipeline(registry, toolbox_factory, analyst, scope_001)
 
 
 # ------------------------------------------------------------------ validators
+
+
+@pytest.mark.parametrize(
+    "message,recognized",
+    [
+        ("Alavancagem atual acima do limite de política.", True),
+        ("Alavancagem líquida e pró-forma acima dos limites de política.", True),
+        ("Current leverage exceeds policy limits.", True),
+        ("Alavancagem pró-forma acima do limite.", False),
+        ("Sensibilidade ao preço da safra.", False),
+    ],
+)
+async def test_current_leverage_synonyms_do_not_create_false_missing_risk(pipeline, message, recognized):
+    results, evidence, events = pipeline
+    metrics = dict(results["agro_credit_risk"].output["metrics"], net_debt_ebitda=4.2)
+    results = _mutated(
+        results,
+        "agro_credit_risk",
+        metrics=metrics,
+        main_risks=[
+            {"code": "EXPOSURE", "message": message, "severity": "high", "evidence_ids": ["CALC-CREDIT-METRICS-R1"]}
+        ],
+    )
+    findings = policy_threshold_breach(_ctx(results, evidence, events))
+    assert any("net_debt_ebitda" in f.message for f in findings) != recognized
 
 
 async def test_clean_pipeline_only_raises_the_baseline_assumption(pipeline):
