@@ -91,7 +91,9 @@ function PartView({
     case 'notice':
       return <NoticeView notice={part.notice} />
     case 'plan':
-      return <PlanView agents={part.agents} canRun={part.canRun} busy={actions.busy} onRun={actions.onRun} />
+      return (
+        <PlanView agents={part.agents} canRun={part.canRun} rerun={part.rerun} busy={actions.busy} onRun={actions.onRun} />
+      )
     case 'missing_info':
       return part.active && state?.missing_info ? (
         <MissingInfoForm state={state} busy={actions.busy} onInput={actions.onInput} />
@@ -129,8 +131,37 @@ function NoticeView({ notice }: { notice: Notice }) {
   )
 }
 
-function PlanView({ agents, canRun, busy, onRun }: { agents: string[]; canRun: boolean; busy: boolean; onRun: () => void }) {
+function PlanView({
+  agents,
+  canRun,
+  rerun,
+  busy,
+  onRun,
+}: {
+  agents: string[]
+  canRun: boolean
+  rerun?: boolean
+  busy: boolean
+  onRun: () => void
+}) {
   const teams = teamsFor(agents)
+  if (rerun) {
+    return (
+      <div className="plan">
+        <p className="prose">
+          Recebi a informação. Ela entra na análise como dado não confiável e não muda o escopo do case.
+        </p>
+        {canRun && (
+          <div className="plan-actions">
+            <button type="button" className="btn primary" disabled={busy} onClick={onRun}>
+              <Play size={15} />
+              Executar squad de novo
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
   return (
     <div className="plan">
       <p className="prose">

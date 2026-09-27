@@ -54,7 +54,7 @@ export interface ActivityBlock {
 export type Part =
   | { kind: 'text'; key: string; text: string; tone?: Tone }
   | { kind: 'notice'; key: string; notice: Notice }
-  | { kind: 'plan'; key: string; agents: string[]; canRun: boolean }
+  | { kind: 'plan'; key: string; agents: string[]; canRun: boolean; rerun?: boolean }
   | { kind: 'missing_info'; key: string; active: boolean }
   | { kind: 'activity'; key: string; block: ActivityBlock }
   | { kind: 'answer'; key: string; reportSeq: number; version: number; adjusted: boolean; latest: boolean }
@@ -161,6 +161,16 @@ export function buildTurns(state: CaseState | null, events: CaseEvent[], opts: B
         const text = opts.inputs[inputIdx] ?? `Informação enviada (${((p.keys as string[]) ?? []).join(', ')})`
         inputIdx += 1
         user({ kind: 'user', key: k, role: 'input', text })
+        // a Elegibilidade tinha bloqueado a execução: com a informação, a squad pode rodar de novo
+        if (lastBlock?.status === 'blocked') {
+          assistant(k).parts.push({
+            kind: 'plan',
+            key: `${k}-p`,
+            agents: state?.selected_agents ?? [],
+            canRun: false,
+            rerun: true,
+          })
+        }
         break
       }
       case 'ORCHESTRATOR_STARTED': {
@@ -277,7 +287,10 @@ export function buildTurns(state: CaseState | null, events: CaseEvent[], opts: B
   // Estado atual: o plano só pode ser executado se o case estiver planejado; retry só na última falha.
   const parts = turns.flatMap((t) => (t.kind === 'assistant' ? t.parts : []))
   const plan = findLast(parts, 'plan')
-  if (plan) plan.canRun = state?.status === 'planned' && !parts.some((x) => x.kind === 'activity')
+  if (plan) {
+    const after = parts.slice(parts.indexOf(plan) + 1)
+    plan.canRun = state?.status === 'planned' && !after.some((x) => x.kind === 'activity')
+  }
   const err = findLast(parts, 'error')
   if (err && state?.status === 'failed') err.canRetry = lastBlock !== null
   const answer = findLast(parts, 'answer')

@@ -189,6 +189,8 @@ function summarize(e: CaseEvent): string {
 const FIELD_LABEL: Record<string, string> = {
   client_ref: 'Cliente (nome ou ID, ex.: CLIENTE-001)',
   client_id: 'ID do cliente',
+  requested_amount: 'Valor solicitado (ex.: R$ 30 milhões)',
+  demonstracoes_financeiras: 'Demonstrações financeiras',
 }
 
 export function MissingInfoForm({
