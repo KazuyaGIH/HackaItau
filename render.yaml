@@ -1,0 +1,16 @@
+# Render Blueprint: New + > Blueprint > este repositório. Preencha as variáveis marcadas no painel.
+services:
+  - type: web
+    name: agent-squads-agro
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: DEMO_MODE
+        value: "true"
