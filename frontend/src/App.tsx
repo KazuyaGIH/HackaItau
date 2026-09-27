@@ -31,7 +31,13 @@ export default function App() {
 
   if (!user) return <Landing onSignIn={enter} />
   // key: trocar de usuário recria o workspace (conversas e cases são de cada um)
-  return <Workspace key={user.user_id} user={user} onSignOut={leave} entering={entering} onEntered={entered} />
+  return (
+    <>
+      {/* anel de luz na borda da abertura; só existe durante a entrada (ver .vt-glow em index.css) */}
+      {entering && <div className="vt-glow" aria-hidden="true" />}
+      <Workspace key={user.user_id} user={user} onSignOut={leave} entering={entering} onEntered={entered} />
+    </>
+  )
 }
 
 interface WorkspaceProps {
@@ -65,7 +71,7 @@ function Workspace({ user, onSignOut, entering, onEntered }: WorkspaceProps) {
 
   useEffect(() => {
     if (!entering) return
-    const t = window.setTimeout(onEntered, 1000)
+    const t = window.setTimeout(onEntered, 1500)
     return () => window.clearTimeout(t)
   }, [entering, onEntered])
 

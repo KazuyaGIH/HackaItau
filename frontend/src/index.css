@@ -721,32 +721,63 @@ pre.formula { white-space: pre-wrap; word-break: break-word; color: var(--ink-2)
 .suggestions button:hover { background: var(--hover); border-color: var(--line-strong); }
 .sugg-num { flex: none; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--accent-ink); }
 
-/* ---------------- entrada na área: view transition + elementos que sobem em cascata ---------------- */
-::view-transition-group(brand), ::view-transition-group(art) { animation-duration: 0.6s; animation-timing-function: cubic-bezier(0.65, 0, 0.2, 1); }
+/* ---------------- entrada na área: view transition + elementos que sobem em cascata ----------------
+   Entrar: a tela de entrada avança na direção de quem olha e se desfaz (como atravessá-la); a área de trabalho
+   floresce a partir do botão Entrar, com borda macia e um anel de luz laranja nessa borda, e "revela" como uma
+   foto: começa quente e fora de foco. O nome e a pintura voam até seus lugares; o resto sobe em cascata. */
+@property --vt-r { syntax: '<length>'; inherits: true; initial-value: 0px; }
+::view-transition-group(brand), ::view-transition-group(art) { animation-duration: 0.85s; animation-timing-function: cubic-bezier(0.7, 0, 0.15, 1); }
 ::view-transition-old(art), ::view-transition-new(art) { height: 100%; }
-html[data-vt='enter']::view-transition-old(root) { animation: vt-recede 0.45s cubic-bezier(0.4, 0, 0.2, 1) both; }
-html[data-vt='enter']::view-transition-new(root) { animation: vt-reveal 0.6s cubic-bezier(0.65, 0, 0.2, 1) both; }
+html[data-vt='enter']::view-transition-old(root) { animation: vt-through 0.75s cubic-bezier(0.55, 0, 0.2, 1) both; }
+html[data-vt='enter']::view-transition-new(root) {
+  -webkit-mask-image: radial-gradient(circle at var(--vt-x, 50%) var(--vt-y, 50%), #000 calc(var(--vt-r) - 180px), transparent var(--vt-r));
+  mask-image: radial-gradient(circle at var(--vt-x, 50%) var(--vt-y, 50%), #000 calc(var(--vt-r) - 180px), transparent var(--vt-r));
+  animation: vt-bloom 0.95s cubic-bezier(0.65, 0, 0.2, 1) both, vt-develop 1.1s cubic-bezier(0.3, 0, 0.2, 1) both;
+}
 html[data-vt='leave']::view-transition-old(root) { animation: vt-recede 0.35s ease both; }
 html[data-vt='leave']::view-transition-new(root) { animation: vt-fade-in 0.4s ease 0.05s both; }
+@keyframes vt-through { to { opacity: 0; transform: scale(1.09); filter: blur(12px); } }
 @keyframes vt-recede { to { opacity: 0; transform: scale(0.97); filter: blur(6px); } }
-@keyframes vt-reveal {
-  from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 50%)); }
-  to { clip-path: circle(150vmax at var(--vt-x, 50%) var(--vt-y, 50%)); }
-}
+@keyframes vt-bloom { from { --vt-r: 0px; } to { --vt-r: 170vmax; } }
+@keyframes vt-develop { from { transform: scale(1.035); filter: sepia(0.55) saturate(1.25) blur(7px); } to { transform: none; filter: none; } }
 @keyframes vt-fade-in { from { opacity: 0; } }
 
-@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-@keyframes slide-in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
-.app.entering .sidebar > * { animation: slide-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-.app.entering .sidebar > :nth-child(2) { animation-delay: 0.22s; }
-.app.entering .sidebar > :nth-child(3) { animation-delay: 0.26s; }
-.app.entering .sidebar > :nth-child(4) { animation-delay: 0.3s; }
-.app.entering .sidebar > :nth-child(5) { animation-delay: 0.34s; }
-.app.entering .empty-field { animation: vt-fade-in 0.9s ease 0.3s both; }
-.app.entering .topbar { animation: rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) 0.18s both; }
-.app.entering .empty > :not(.empty-art) { animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-.app.entering .empty > h1 { animation-delay: 0.24s; }
-.app.entering .empty > p { animation-delay: 0.29s; }
-.app.entering .empty > .composer { animation-delay: 0.34s; }
-.app.entering .empty > .suggestions { animation-delay: 0.39s; }
+/* o anel acompanha a borda da abertura (mesmo raio, mesma curva) e se apaga ao passar das bordas da tela */
+.vt-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  view-transition-name: vt-glow;
+  background: radial-gradient(
+    circle at var(--vt-x, 50%) var(--vt-y, 50%),
+    transparent calc(var(--vt-r) - 150px),
+    rgb(236 112 0 / 0.28) calc(var(--vt-r) - 70px),
+    rgb(255 176 92 / 0.5) calc(var(--vt-r) - 30px),
+    transparent var(--vt-r)
+  );
+  animation: vt-bloom 0.95s cubic-bezier(0.65, 0, 0.2, 1) both, vt-glow-out 0.95s ease-in both;
+}
+::view-transition-new(vt-glow) { animation: none; }
+/* sem view transition (navegador sem suporte ou movimento reduzido) não há abertura, então também não há anel */
+html:not([data-vt='enter']) .vt-glow { display: none; }
+@keyframes vt-glow-out { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+
+@keyframes rise { from { opacity: 0; transform: translateY(18px); filter: blur(5px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes slide-in { from { opacity: 0; transform: translateX(-16px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+.app.entering .sidebar > * { animation: slide-in 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) 0.32s both; }
+/* no topo, só o botão entra em cascata: o nome chega voando (view transition "brand") */
+.app.entering .sidebar > :first-child { animation: none; }
+.app.entering .sidebar-top .icon-btn { animation: slide-in 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) 0.32s both; }
+.app.entering .sidebar > :nth-child(2) { animation-delay: 0.36s; }
+.app.entering .sidebar > :nth-child(3) { animation-delay: 0.42s; }
+.app.entering .sidebar > :nth-child(4) { animation-delay: 0.48s; }
+.app.entering .sidebar > :nth-child(5) { animation-delay: 0.54s; }
+.app.entering .empty-field { animation: vt-fade-in 1.2s ease 0.45s both; }
+.app.entering .topbar { animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) 0.3s both; }
+.app.entering .empty > :not(.empty-art) { animation: rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.app.entering .empty > h1 { animation-delay: 0.4s; }
+.app.entering .empty > p { animation-delay: 0.47s; }
+.app.entering .empty > .composer { animation-delay: 0.54s; }
+.app.entering .empty > .suggestions { animation-delay: 0.61s; }
 /* a pintura não entra na cascata: ela chega voando da tela de entrada (view transition "art") */

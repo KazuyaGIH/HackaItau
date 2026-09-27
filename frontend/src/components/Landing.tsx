@@ -15,6 +15,35 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const keystroke = (base: number, spread: number) => wait(base + Math.random() * spread)
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+// rolagem de verdade até a seção (e não o salto da âncora): acelera, desliza e assenta; a duração cresce com a distância.
+// Rodinha, toque ou tecla no meio do caminho devolvem o controle a quem está rolando.
+function glideTo(target: HTMLElement) {
+  const start = window.scrollY
+  const end = target.getBoundingClientRect().top + start
+  const distance = end - start
+  if (reducedMotion() || Math.abs(distance) < 2) {
+    window.scrollTo(0, end)
+    return
+  }
+  const duration = Math.min(1400, Math.max(700, Math.abs(distance) * 0.9))
+  const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
+  const stops = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const
+  let frame = 0
+  const cancel = () => {
+    cancelAnimationFrame(frame)
+    stops.forEach((ev) => window.removeEventListener(ev, cancel))
+  }
+  stops.forEach((ev) => window.addEventListener(ev, cancel, { passive: true }))
+  const t0 = performance.now()
+  const step = (now: number) => {
+    const t = Math.min(1, (now - t0) / duration)
+    window.scrollTo(0, start + distance * ease(t))
+    if (t < 1) frame = requestAnimationFrame(step)
+    else cancel()
+  }
+  frame = requestAnimationFrame(step)
+}
+
 // senha de mentira para o preenchimento da demo: só enfeita o campo, nunca é conferida nem enviada
 function fakePassword(): string {
   const abc = 'abcdefghjkmnpqrstuvwxyz23456789'
@@ -192,7 +221,16 @@ export function Landing({ onSignIn }: { onSignIn: SignIn }) {
           <figcaption className="l-credit">{ART_CREDIT}</figcaption>
         </figure>
 
-        <a className="l-scroll" href="#como-funciona">
+        <a
+          className="l-scroll"
+          href="#como-funciona"
+          onClick={(e) => {
+            const how = document.getElementById('como-funciona')
+            if (!how) return
+            e.preventDefault()
+            glideTo(how)
+          }}
+        >
           <span>role para ver como funciona</span>
           <span className="l-scroll-arrow" aria-hidden="true">
             ↓
