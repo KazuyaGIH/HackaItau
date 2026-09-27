@@ -1,4 +1,6 @@
-import { ArrowLeft, X } from 'lucide-react'
+import { ArrowLeft, Download, Maximize2, Minimize2, X } from 'lucide-react'
+import { useRef } from 'react'
+import { downloadReportHtml } from '../exportReport'
 import type { PanelView } from '../panel'
 import type { CaseEvent, CaseState, Report } from '../types'
 import { GovernancePanel, Timeline } from './Governance'
@@ -11,11 +13,24 @@ interface Props {
   state: CaseState | null
   events: CaseEvent[]
   reports: Record<number, Report>
+  fullscreen: boolean
+  onToggleFullscreen: () => void
   onNavigate: (view: PanelView) => void
   onClose: () => void
 }
 
-export function SidePanel({ view, caseId, state, events, reports, onNavigate, onClose }: Props) {
+export function SidePanel({
+  view,
+  caseId,
+  state,
+  events,
+  reports,
+  fullscreen,
+  onToggleFullscreen,
+  onNavigate,
+  onClose,
+}: Props) {
+  const bodyRef = useRef<HTMLDivElement>(null)
   const versions = Object.keys(reports)
     .map(Number)
     .sort((a, b) => a - b)
@@ -28,10 +43,11 @@ export function SidePanel({ view, caseId, state, events, reports, onNavigate, on
     </>
   ) : null
   let back: PanelView | null = null
+  let report: Report | null = null
 
   if (view.kind === 'report') {
     const seq = view.reportSeq ?? versions[versions.length - 1] ?? null
-    const report = (seq !== null ? reports[seq] : null) ?? state?.report ?? null
+    report = (seq !== null ? reports[seq] : null) ?? state?.report ?? null
     title = 'Relatório para revisão humana'
     body = report ? (
       <ReportView report={report} state={state} section={view.section} />
@@ -72,8 +88,15 @@ export function SidePanel({ view, caseId, state, events, reports, onNavigate, on
     )
   }
 
+  const download = () => {
+    const article = bodyRef.current?.querySelector<HTMLElement>('article.doc')
+    if (!article) return
+    const heading = article.querySelector('h2')?.textContent?.trim() || 'Relatório'
+    downloadReportHtml(article, { title: `Relatório - ${heading}`, caseId })
+  }
+
   return (
-    <aside className="side-panel" aria-label={title}>
+    <aside className={`side-panel${fullscreen ? ' fullscreen' : ''}`} aria-label={title}>
       <header className="panel-head">
         {back && (
           <button type="button" className="icon-btn" onClick={() => onNavigate(back!)} aria-label="Voltar" title="Voltar">
@@ -81,11 +104,36 @@ export function SidePanel({ view, caseId, state, events, reports, onNavigate, on
           </button>
         )}
         <h2>{title}</h2>
+        {view.kind === 'report' && report && (
+          <>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={download}
+              aria-label="Baixar relatório"
+              title="Baixar relatório (HTML; imprima em PDF pelo navegador)"
+            >
+              <Download size={18} />
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={onToggleFullscreen}
+              aria-pressed={fullscreen}
+              aria-label={fullscreen ? 'Sair da tela cheia' : 'Relatório em tela cheia'}
+              title={fullscreen ? 'Sair da tela cheia (Esc)' : 'Relatório em tela cheia'}
+            >
+              {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+          </>
+        )}
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar painel" title="Fechar painel">
           <X size={18} />
         </button>
       </header>
-      <div className="panel-body">{body}</div>
+      <div className="panel-body" ref={bodyRef}>
+        {body}
+      </div>
     </aside>
   )
 }
