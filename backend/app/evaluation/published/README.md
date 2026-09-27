@@ -23,3 +23,16 @@ pagas. O resumo não inclui prompts, respostas individuais nem credenciais.
 São oito casos sintéticos por configuração, uma repetição por caso. O empate é nas
 verificações automáticas; a avaliação humana de qualidade permanece pendente.
 Metodologia e instruções de reprodução: [BENCHMARK.md](../../../../BENCHMARK.md).
+
+## Dados que permitem refazer as contas
+
+[measurements.json](measurements.json) publica, para cada execução, status, checks gravados,
+contagens de entrada/cache/saída por chamada, tarifas e hash do trace original. Inclui falhas,
+as seis configurações e o plano completo. O arquivo foi extraído dos traces por seleção explícita
+desses campos; não contém mensagens, respostas, credenciais nem textos de erro do provedor.
+
+`make benchmark-audit` confere as contas com [audit.py](../audit.py), independentemente do cálculo
+do runner. [BENCHMARK_RECALCULO.md](../../../../BENCHMARK_RECALCULO.md) mostra as substituições
+numéricas da fórmula, os motivos das reprovações e os comandos de reprodução/testes.
+Os checks publicados permitem recontar o resultado, mas não revisar a qualidade semântica das
+respostas: isso exige os traces originais. Não confundir essa auditoria com uma nova execução paga.

@@ -1,5 +1,7 @@
 # Como testar a hipótese de custo e qualidade
 
+Para conferir os **valores apresentados na demo**, veja [a recontagem com fórmulas, registros e mapa do código](BENCHMARK_RECALCULO.md). Rode `make benchmark-audit` para conferir offline os 48 registros publicados.
+
 O comparativo executa **squad e generalista com cada modelo configurado**. A hipótese é que a
 especialização permita atingir uma qualidade exigida com menor custo. O resultado não é predeterminado:
 o generalista barato também participa e pode vencer.
