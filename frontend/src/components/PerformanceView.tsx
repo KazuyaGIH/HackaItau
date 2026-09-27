@@ -5,6 +5,7 @@ import { DOMAIN_LABEL } from '../format'
 import { agentIcon } from '../iconMap'
 import { AGENT_META, toolLabel } from '../squad'
 import type { AgentMetrics, Metrics } from '../types'
+import { AsciiField } from './AsciiField'
 
 const FORBIDDEN_LABEL: Record<string, string> = {
   approve_credit: 'aprovar crédito',
@@ -82,6 +83,7 @@ export function PerformanceView({ sidebarOpen, onOpenSidebar }: Props) {
           </button>
         </div>
       </header>
+      <AsciiField className="empty-field" />
       <div className="scroller">
         <div className="perf">
           {error && (

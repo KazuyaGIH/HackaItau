@@ -1,16 +1,48 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { Conversation } from './components/Conversation'
+import { Landing, type SignIn } from './components/Landing'
 import { PerformanceView } from './components/PerformanceView'
 import { SidePanel } from './components/SidePanel'
 import { Sidebar } from './components/Sidebar'
 import { PanelContext, type PanelApi, type PanelView } from './panel'
+import { useSession } from './session'
+import { withTransition } from './transition'
+import type { Identity } from './types'
 import { useWorkspace } from './workspace'
 
 const narrow = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches
 
 export default function App() {
-  const ws = useWorkspace()
+  const { user, signIn, signOut } = useSession()
+  const [entering, setEntering] = useState(false)
+
+  const enter: SignIn = (u, from) =>
+    withTransition(
+      'enter',
+      () => {
+        signIn(u)
+        setEntering(true)
+      },
+      from,
+    )
+  const leave = () => withTransition('leave', signOut)
+  const entered = useCallback(() => setEntering(false), [])
+
+  if (!user) return <Landing onSignIn={enter} />
+  // key: trocar de usuário recria o workspace (conversas e cases são de cada um)
+  return <Workspace key={user.user_id} user={user} onSignOut={leave} entering={entering} onEntered={entered} />
+}
+
+interface WorkspaceProps {
+  user: Identity
+  onSignOut: () => void
+  entering: boolean // acabou de entrar: os elementos sobem em cascata
+  onEntered: () => void
+}
+
+function Workspace({ user, onSignOut, entering, onEntered }: WorkspaceProps) {
+  const ws = useWorkspace(user.user_id)
   const [llmReady, setLlmReady] = useState<boolean | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => !narrow())
   const [panel, setPanel] = useState<PanelView | null>(null)
@@ -30,6 +62,12 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [reportFullscreen])
+
+  useEffect(() => {
+    if (!entering) return
+    const t = window.setTimeout(onEntered, 1000)
+    return () => window.clearTimeout(t)
+  }, [entering, onEntered])
 
   useEffect(() => {
     api.health().then(
@@ -67,7 +105,7 @@ export default function App() {
   return (
     <PanelContext.Provider value={panelApi}>
       <div
-        className={`app${sidebarOpen ? ' with-sidebar' : ''}${panel ? ' with-panel' : ''}${
+        className={`app${entering ? ' entering' : ''}${sidebarOpen ? ' with-sidebar' : ''}${panel ? ' with-panel' : ''}${
           panel && reportFullscreen && view === 'chat' ? ' report-fullscreen' : ''
         }`}
       >
@@ -94,6 +132,8 @@ export default function App() {
               performanceActive={view === 'performance'}
               onClose={() => setSidebarOpen(false)}
               llmReady={llmReady}
+              user={user}
+              onSignOut={onSignOut}
             />
           </>
         )}

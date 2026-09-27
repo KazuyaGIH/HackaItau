@@ -6,6 +6,14 @@ export interface HealthResponse {
   demo_mode: boolean
 }
 
+// identidade fictícia da demo (backend: governance/identities.json)
+export interface Identity {
+  user_id: string
+  name: string
+  role: string
+  permissions_read: string[]
+}
+
 export type CaseStatus =
   | 'created'
   | 'interpreting'

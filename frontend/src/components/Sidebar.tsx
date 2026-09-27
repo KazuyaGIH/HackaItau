@@ -5,6 +5,7 @@ import {
   CircleDot,
   FlaskConical,
   LoaderCircle,
+  LogOut,
   PanelLeft,
   SquarePen,
   Trash2,
@@ -12,8 +13,10 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import type { CaseStatus } from '../types'
-import { ACTIVE, USER_ID, type Conversation } from '../workspace'
-import { OrchestratorMark } from './ui'
+import { roleLabel } from '../session'
+import type { Identity } from '../types'
+import { ACTIVE, type Conversation } from '../workspace'
+import { PRODUCT } from '../brand'
 
 interface Props {
   conversations: Conversation[]
@@ -27,6 +30,8 @@ interface Props {
   onPerformance: () => void
   performanceActive: boolean
   llmReady: boolean | null
+  user: Identity
+  onSignOut: () => void
 }
 
 function StatusIcon({ status }: { status: CaseStatus | 'creating' | 'error' | null }) {
@@ -102,13 +107,14 @@ export function Sidebar({
   onPerformance,
   performanceActive,
   llmReady,
+  user,
+  onSignOut,
 }: Props) {
   return (
     <nav className="sidebar" aria-label="Conversas">
       <div className="sidebar-top">
         <div className="brand">
-          <OrchestratorMark size={26} />
-          <span>Agent Squads</span>
+          <span className="brand-name">{PRODUCT}</span>
         </div>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar barra lateral" title="Fechar barra lateral">
           <PanelLeft size={18} />
@@ -145,9 +151,12 @@ export function Sidebar({
             <User size={16} />
           </span>
           <span>
-            <strong>{USER_ID}</strong>
-            <span className="muted small">Analista de crédito</span>
+            <strong>{user.user_id}</strong>
+            <span className="muted small">{roleLabel(user.role)}</span>
           </span>
+          <button type="button" className="icon-btn" onClick={onSignOut} aria-label="Sair" title="Sair">
+            <LogOut size={16} />
+          </button>
         </div>
         <p className="env">
           <FlaskConical size={14} />

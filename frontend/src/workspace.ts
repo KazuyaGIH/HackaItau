@@ -6,9 +6,9 @@ import { localRefusal } from './guard'
 import type { LocalMessage, Turn } from './transcript'
 import type { AssistReply, CaseEvent, CaseState, CaseStatus, HumanReviewRequest, Report } from './types'
 
-export const USER_ID = 'analyst-001'
 const POLL_MS = 1200
-const STORAGE_KEY = 'agent-squads.conversations.v1'
+// conversas são de cada usuário: trocar de login mostra só as dele
+const storageKey = (userId: string) => `agent-squads.conversations.v1.${userId}`
 
 export const ACTIVE: ReadonlySet<CaseStatus> = new Set(['interpreting', 'running', 'reviewing', 'consolidating'])
 export const MAX_FILE_BYTES = 2_000_000
@@ -84,18 +84,18 @@ const assistTurn = (reply: AssistReply): Turn => {
 }
 const textReply = (message: string): AssistReply => ({ kind: 'clarify', message, bullets: [], citations: [], suggestions: [] })
 
-function load(): Conversation[] {
+function load(userId: string): Conversation[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey(userId))
     return raw ? (JSON.parse(raw) as Conversation[]) : []
   } catch {
     return []
   }
 }
 
-function save(conversations: Conversation[]) {
+function save(userId: string, conversations: Conversation[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations))
+    localStorage.setItem(storageKey(userId), JSON.stringify(conversations))
   } catch {
     /* armazenamento indisponível: a conversa só vive nesta aba */
   }
@@ -117,8 +117,8 @@ function snapshotReports(prev: Record<number, Report>, state: CaseState, events:
   return { ...prev, [consolidated]: state.report }
 }
 
-export function useWorkspace() {
-  const [conversations, setConversations] = useState<Conversation[]>(load)
+export function useWorkspace(userId: string) {
+  const [conversations, setConversations] = useState<Conversation[]>(() => load(userId))
   const [currentId, setCurrentId] = useState<string | null>(null)
   const [cases, setCases] = useState<Record<string, CaseData>>({})
   const [pending, setPending] = useState<Record<string, PendingMessage | null>>({}) // por branch
@@ -129,7 +129,7 @@ export function useWorkspace() {
   }, [cases])
   const inFlight = useRef(new Set<string>())
 
-  useEffect(() => save(conversations), [conversations])
+  useEffect(() => save(userId, conversations), [userId, conversations])
 
 
   const current = conversations.find((c) => c.id === currentId) ?? null
@@ -226,7 +226,7 @@ export function useWorkspace() {
         }
         try {
           await api.attach(caseId, {
-            user_id: USER_ID,
+            user_id: userId,
             filename: f.name,
             content_type: f.type,
             data_base64: await toBase64(f),
@@ -237,7 +237,7 @@ export function useWorkspace() {
       }
       await refresh(caseId)
     },
-    [refresh],
+    [refresh, userId],
   )
 
   const startBranch = useCallback(
@@ -247,7 +247,7 @@ export function useWorkspace() {
       setPending((p) => ({ ...p, [b.id]: { text: b.prompt, sinceSeq: 0, files: files.map((f) => f.name) } }))
       try {
         const st = await api.createCase({
-          user_id: USER_ID,
+          user_id: userId,
           prompt: b.prompt,
           demo_options: { adversarial_document: b.adversarial },
         })
@@ -262,7 +262,7 @@ export function useWorkspace() {
         setPending((p) => ({ ...p, [b.id]: null }))
       }
     },
-    [call, refresh, updateBranch, upload],
+    [call, refresh, updateBranch, upload, userId],
   )
 
   const addLocal = useCallback(
@@ -318,7 +318,7 @@ export function useWorkspace() {
       try {
         if (caseId && opts.files.length) await upload(caseId, opts.files)
         if (!text) return
-        const reply = await api.assist({ user_id: USER_ID, text, case_id: caseId })
+        const reply = await api.assist({ user_id: userId, text, case_id: caseId })
         if (!caseId) {
           if (reply.kind === 'credit_demand') {
             await startBranch(conv.id, { ...b, prompt: text }, false, opts.files)
@@ -353,7 +353,7 @@ export function useWorkspace() {
         setPending((p) => ({ ...p, [b.id]: null }))
       }
     },
-    [addLocal, call, currentId, humanReview, startBranch, updateBranch, upload],
+    [addLocal, call, currentId, humanReview, startBranch, updateBranch, upload, userId],
   )
 
   // Ramificação estilo ChatGPT: editar a demanda ou gerar de novo cria um case novo ao lado do anterior.
@@ -417,6 +417,7 @@ export function useWorkspace() {
     () => ({
       conversations,
       current,
+      userId,
       branch,
       caseData,
       pending: branch ? (pending[branch.id] ?? null) : null,
@@ -436,6 +437,7 @@ export function useWorkspace() {
       titleOf,
     }),
     [
+      userId,
       conversations,
       current,
       branch,
