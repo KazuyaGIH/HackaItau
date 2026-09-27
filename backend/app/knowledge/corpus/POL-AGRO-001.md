@@ -6,6 +6,7 @@ Documento fictício para demonstração. Não representa política real.
 - Produtor rural ativo, pessoa jurídica ou física, com atividade agrícola comprovada.
 - Área plantada comprovada por matrícula ou contrato de arrendamento vigente até o fim do ciclo.
 - Ausência de restritivos relevantes no cadastro.
+- Valor solicitado igual ou superior a R$ 1.000.000,00 (ticket mínimo das linhas de custeio do catálogo).
 
 ## Documentos obrigatórios para custeio
 - Matrícula do imóvel ou contrato de arrendamento.

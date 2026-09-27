@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.container import build_container, get_container
 from app.main import app
+from app.orchestration.interpreter import heuristic_interpret
 
 PROMPT = "O cliente Fazenda Horizonte S.A. solicita R$ 50 milhões para custeio da safra de soja 2026/27."
 
@@ -13,6 +14,22 @@ PROMPT = "O cliente Fazenda Horizonte S.A. solicita R$ 50 milhões para custeio 
 @pytest.fixture(scope="module")
 def client():
     return TestClient(app)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("R$ 10M", 10_000_000),
+        ("R$10 MM", 10_000_000),
+        ("10 mi para custeio", 10_000_000),
+        ("R$ 500k", 500_000),
+        ("R$ 10.000.000,00", 10_000_000),
+        ("42 mil ha e R$ 50 milhões", 50_000_000),
+        ("safra 2026/27 de soja", None),
+    ],
+)
+def test_heuristic_amount_parsing(text, expected):
+    assert heuristic_interpret(text).requested_amount == expected
 
 
 def test_create_case_freezes_scope_and_selects_agents(client):

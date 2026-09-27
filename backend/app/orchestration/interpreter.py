@@ -26,7 +26,8 @@ _CLIENT_NAME_RE = re.compile(
     r"(?=\s+(?:solicita|pede|precisa|quer|deseja|busca|requer)|[,.;:]|\s*$)",
 )
 _AMOUNT_RE = re.compile(
-    r"R?\$?\s*(?P<num>\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*(?P<unit>milh(?:ão|ões|oes|ao)|mi\b|mm\b|bilh(?:ão|ões|oes|ao)|bi\b|mil\b)?",
+    r"R?\$?\s*(?P<num>\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*"
+    r"(?P<unit>milh(?:ão|ões|oes|ao)|mi\b|mm\b|m\b|bilh(?:ão|ões|oes|ao)|bi\b|mil\b|k\b)?",
     re.IGNORECASE,
 )
 _CYCLE_RE = re.compile(r"\b(20\d{2})\s*/\s*(20)?(\d{2})\b")
@@ -47,19 +48,21 @@ def _to_number(raw: str) -> float:
     return float(raw.replace(".", ""))
 
 
-def _parse_amount(text: str) -> float | None:
+def parse_amount(text: str, *, bare_number_ok: bool = False) -> float | None:
+    """Valor em reais a partir de texto livre. Em prosa, número sem R$/unidade é ignorado (ano, área, sc/ha);
+    `bare_number_ok` é para campos que só contêm o valor (ex.: resposta do formulário)."""
     best: float | None = None
     for m in _AMOUNT_RE.finditer(text):
         raw, unit = m.group("num"), (m.group("unit") or "").lower()
         has_currency = m.group(0).lstrip().startswith(("R$", "$"))
-        if not unit and not has_currency:
-            continue  # número solto (ano, área, sc/ha) não é valor
+        if not unit and not has_currency and not bare_number_ok:
+            continue
         mult = 1.0
-        if unit.startswith("milh") or unit in ("mi", "mm"):
+        if unit.startswith("milh") or unit in ("mi", "mm", "m"):
             mult = 1e6
         elif unit.startswith("bilh") or unit == "bi":
             mult = 1e9
-        elif unit == "mil":
+        elif unit in ("mil", "k"):
             mult = 1e3
         value = _to_number(raw) * mult
         if best is None or value > best:
@@ -84,7 +87,7 @@ def heuristic_interpret(prompt: str) -> InterpretedDemand:
     return InterpretedDemand(
         intent="credito_agro",
         client_ref=client_ref,
-        requested_amount=_parse_amount(text),
+        requested_amount=parse_amount(text),
         purpose=_strip_accents(purpose) if purpose else None,
         crop=_strip_accents(crop) if crop else None,
         cycle=cycle,
@@ -102,7 +105,8 @@ async def interpret(prompt: str, provider: LLMProvider | None, model: str) -> In
         + wrap_untrusted("user_prompt", prompt)
         + "\n\n## Formato de saída\nJSON conforme:\n"
         + render_schema(InterpretedDemand)
-        + '\nUse intent="credito_agro"; campos desconhecidos = null; purpose sem acento (ex.: custeio).'
+        + '\nUse intent="credito_agro"; campos desconhecidos = null; purpose sem acento (ex.: custeio); '
+        'requested_amount em reais, valor absoluto ("10 milhões"/"R$ 10M" → 10000000).'
     )
     try:
         resp = await provider.complete(

@@ -1,7 +1,8 @@
 """Agro Eligibility Agent — gate (ARCHITECTURE.md §6.1).
 
-validate (código): documentos/campos obrigatórios de policies.json contra os sources coletados.
-Se falta obrigatório → status=blocked independente do LLM; blocking do LLM fora da lista → vira warning.
+validate (código): documentos/campos obrigatórios de policies.json contra os sources coletados e valor solicitado
+(presente e >= ticket mínimo da política). Se falta obrigatório → status=blocked independente do LLM; blocking do
+LLM fora da lista → vira warning.
 """
 
 from pydantic import BaseModel
@@ -15,6 +16,7 @@ from app.core.schemas.outputs import EligibilityOutput, EvidencedItem, MissingIt
 
 DOC_AREA_MISMATCH = "DOC_AREA_MISMATCH"
 SUSPICIOUS_CONTENT = "SUSPICIOUS_CONTENT"
+REQUESTED_AMOUNT = "requested_amount"
 
 
 class EligibilityAgent(BaseAgent):
@@ -39,7 +41,9 @@ class EligibilityAgent(BaseAgent):
             MissingItem(item=t, blocking=True, message="Documento obrigatório ausente (política de elegibilidade).")
             for t in missing_docs
         ] + [MissingItem(item=f, blocking=True, message="Campo obrigatório ausente no perfil agro.") for f in missing_fields]
-        required_set = set(required_docs) | set(policy.required_fields)
+        if amount_problem := _requested_amount_problem(task.inputs.get("requested_amount"), policy.min_requested_amount):
+            missing.append(amount_problem)
+        required_set = set(required_docs) | set(policy.required_fields) | {REQUESTED_AMOUNT}
 
         warnings: list[EvidencedItem] = list(llm.warnings)
         for m in llm.missing_items:
@@ -80,6 +84,29 @@ class EligibilityAgent(BaseAgent):
         if llm.status != status:
             result_warnings.append(f"status_llm_sobrescrito:{llm.status}->{status}")
         return ValidatedOutput(output=out.model_dump(), warnings=result_warnings)
+
+
+def _requested_amount_problem(requested: object, minimum: float) -> MissingItem | None:
+    if not isinstance(requested, (int, float)):
+        return MissingItem(
+            item=REQUESTED_AMOUNT,
+            blocking=True,
+            message="Valor solicitado não identificado no pedido. Informe em reais (ex.: R$ 50.000.000 ou 50 milhões).",
+        )
+    if float(requested) < minimum:
+        return MissingItem(
+            item=REQUESTED_AMOUNT,
+            blocking=True,
+            message=(
+                f"Valor solicitado ({_brl(float(requested))}) abaixo do ticket mínimo da política "
+                f"({_brl(minimum)}). Confirme o valor em reais."
+            ),
+        )
+    return None
+
+
+def _brl(value: float) -> str:
+    return "R$ " + f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _area_mismatch(agro: SourceRecord | None, docs: list[SourceRecord], tolerance: float) -> EvidencedItem | None:

@@ -27,6 +27,7 @@
       "custeio": ["matricula_ou_arrendamento", "plano_de_plantio", "demonstracoes_financeiras"]
     },
     "required_fields": ["crop", "planted_area_hectares", "production_cycle"],
+    "min_requested_amount": 1000000,
     "area_mismatch_tolerance_pct": 0.05
   }
 }

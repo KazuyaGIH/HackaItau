@@ -27,7 +27,7 @@ from app.governance.bootstrap_resolver import BootstrapClientResolver
 from app.governance.loader import load_identities
 from app.governance.output_guard import OutputGuard
 from app.orchestration.consolidator import consolidate
-from app.orchestration.interpreter import interpret
+from app.orchestration.interpreter import interpret, parse_amount
 from app.orchestration.plans import ELIGIBILITY, REVIEW, RISK, PlanStep, dependents_of, plan_for
 from app.tools.deps import ToolDeps
 from app.tools.gateway import Toolbox
@@ -105,8 +105,11 @@ class Orchestrator:
         if rec.state.interpreted is None:
             return
         update = {}
-        if isinstance(answers.get("requested_amount"), (int, float)):
-            update["requested_amount"] = float(answers["requested_amount"])
+        amount = answers.get("requested_amount")
+        if isinstance(amount, (int, float)):
+            update["requested_amount"] = float(amount)
+        elif isinstance(amount, str) and (parsed := parse_amount(amount, bare_number_ok=True)) is not None:
+            update["requested_amount"] = parsed
         for key in ("purpose", "crop", "cycle"):
             if isinstance(answers.get(key), str) and answers[key]:
                 update[key] = answers[key]
@@ -324,11 +327,13 @@ class Orchestrator:
         out = EligibilityOutput.model_validate(result.output)
         if out.status != "blocked":
             return False
-        items = [m.item for m in out.missing_items if m.blocking] or ["informacao_bloqueante"]
+        blocking = [m for m in out.missing_items if m.blocking]
+        items = [m.item for m in blocking] or ["informacao_bloqueante"]
+        details = " ".join(f"{m.item}: {m.message}" for m in blocking if m.message) or out.summary
         rec.state.missing_info = MissingInfoRequest(
             reason="eligibility_blocked",
             items=items,
-            message="Eligibility identificou informação bloqueante ausente. Risk não foi executado. " + out.summary,
+            message="Eligibility identificou informação bloqueante. Risk não foi executado. " + details,
         )
         rec.events.emit(
             EventType.MISSING_INFO_REQUESTED, {"reason": "eligibility_blocked", "items": items}, agent_id=ELIGIBILITY
