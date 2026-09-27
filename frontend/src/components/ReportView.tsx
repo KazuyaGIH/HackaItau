@@ -1,248 +1,250 @@
-import { CLASSIFICATION_LABEL, DOMAIN_LABEL, SEVERITY_ORDER, brl, num, pct, shortAgent } from '../format'
-import type { Alternative, Finding, Report, ReportItem } from '../types'
-import { Chips } from './SourceChip'
+import { ChevronDown } from 'lucide-react'
+import type { ReactNode } from 'react'
+import {
+  CLASSIFICATION_LABEL,
+  DOMAIN_LABEL,
+  ELIGIBILITY_LABEL,
+  REVIEW_STATUS_LABEL,
+  SEVERITY_ORDER,
+  brl,
+  num,
+  pct,
+} from '../format'
+import { agentName } from '../squad'
+import type { Alternative, CaseState, Finding, Report, ReportItem } from '../types'
+import { Chips, SourceChip } from './SourceChip'
 
-interface Props {
-  caseId: string
-  report: Report
-}
+const NOT_APPROVAL = 'Não representa aprovação de crédito'
 
-export function ReportView({ caseId, report }: Props) {
+const SEVERITY_LABEL: Record<string, string> = { high: 'alta', medium: 'média', low: 'baixa', info: 'informativo' }
+const FINDING_STATUS: Record<string, string> = { open: 'aberto', resolved: 'resolvido', informational: 'informativo' }
+
+// Relatório consolidado, exibido no painel lateral. Números vêm de cálculos por código; textos do modelo citam evidências.
+export function ReportView({ report, state }: { report: Report; state: CaseState | null }) {
   const r = report
   return (
-    <section className="card report">
-      <h2>3. Relatório para revisão humana</h2>
-      <div className="banner info">
-        <b>{r.decision_status}</b> · {r.disclaimer}
-      </div>
+    <article className="report">
+      <p className="report-disclaimer">
+        {r.disclaimer.includes(NOT_APPROVAL)
+          ? r.disclaimer
+          : `Análise gerada para suporte à decisão. ${NOT_APPROVAL}. ${r.disclaimer}`}
+      </p>
 
-      <dl className="summary">
+      <dl className="report-summary">
         <div>
           <dt>Cliente</dt>
           <dd>{r.client_id}</dd>
         </div>
         <div>
           <dt>Valor solicitado</dt>
-          <dd>{brl(r.summary.requested_amount)}</dd>
+          <dd className="num">{brl(r.summary.requested_amount)}</dd>
         </div>
         <div>
-          <dt>Finalidade / cultura</dt>
+          <dt>Finalidade</dt>
           <dd>
-            {r.summary.purpose ?? '—'} / {r.summary.crop ?? '—'}
+            {r.summary.purpose ?? '—'}, {r.summary.crop ?? '—'}
           </dd>
         </div>
         <div>
-          <dt>Eligibility</dt>
-          <dd>{r.summary.eligibility_status}</dd>
+          <dt>Elegibilidade</dt>
+          <dd>{ELIGIBILITY_LABEL[r.summary.eligibility_status] ?? r.summary.eligibility_status}</dd>
         </div>
         <div>
           <dt>Alternativas</dt>
-          <dd>{r.summary.alternatives_count}</dd>
+          <dd className="num">{r.summary.alternatives_count}</dd>
         </div>
         <div>
-          <dt>Rework</dt>
-          <dd>{r.summary.rework_rounds}</dd>
+          <dt>Retrabalho</dt>
+          <dd className="num">{r.summary.rework_rounds}</dd>
         </div>
       </dl>
 
-      <Section title="Fatos" items={r.facts} caseId={caseId} />
+      <Fold title="Capacidade de pagamento e estresse" origin="code" open>
+        <StressTable report={r} />
+        <Fold title={`Fórmulas e entradas (${r.calculations.length} cálculos)`} inner>
+          <div className="calcs">
+            {r.calculations.map((c) => (
+              <div key={c.calculation_id} className="calc">
+                <div className="calc-head">
+                  <SourceChip id={c.calculation_id} />
+                  <strong>{c.name}</strong>
+                  {c.classification && <span className="tag">{CLASSIFICATION_LABEL[c.classification] ?? c.classification}</span>}
+                </div>
+                <pre className="formula">{c.formula}</pre>
+                <table className="kv">
+                  <tbody>
+                    {Object.entries(c.outputs)
+                      .filter(([, v]) => typeof v !== 'object' || v === null)
+                      .map(([k, v]) => (
+                        <tr key={k}>
+                          <td>{k}</td>
+                          <td className="num">{num(v, 4)}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                <p className="muted small">
+                  Limites da política: <Chips ids={c.thresholds_source_ids} />
+                </p>
+              </div>
+            ))}
+          </div>
+        </Fold>
+      </Fold>
 
-      <h3>Cálculos determinísticos</h3>
-      <div className="calcs">
-        {r.calculations.map((c) => (
-          <article key={c.calculation_id} className="calc">
-            <header>
-              <Chips caseId={caseId} ids={[c.calculation_id]} />
-              <span>{c.name}</span>
-              {c.classification && <span className="tag">{CLASSIFICATION_LABEL[c.classification] ?? c.classification}</span>}
-            </header>
-            <pre className="formula">{c.formula}</pre>
-            <table className="kv">
-              <tbody>
-                {Object.entries(c.outputs).map(([k, v]) => (
-                  <tr key={k}>
-                    <td>{k}</td>
-                    <td>
-                      {typeof v === 'object' && v !== null ? (
-                        <span className="muted small">
-                          {Array.isArray(v) ? `${v.length} itens` : 'objeto'} — abrir o ID acima
-                        </span>
-                      ) : (
-                        <b>{num(v, 4)}</b>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="muted small">
-              entradas: {Object.keys(c.inputs).join(', ')} · thresholds: <Chips caseId={caseId} ids={c.thresholds_source_ids} />
-            </p>
-          </article>
-        ))}
-      </div>
+      <Fold title="Riscos e fatores favoráveis" origin="llm" open>
+        <Items title="Fatores de risco" items={r.risk_factors} />
+        <Items title="Fatores favoráveis" items={r.favorable_factors} />
+      </Fold>
 
-      <h3>Premissas</h3>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>premissa</th>
-            <th>valor</th>
-            <th>origem</th>
-            <th>fonte</th>
-            <th>justificativa</th>
-          </tr>
-        </thead>
-        <tbody>
-          {r.assumptions.map((a) => (
-            <tr key={a.name} className={a.changed_in_rework ? 'changed' : ''}>
-              <td>{a.name}</td>
-              <td>
-                {num(a.value)} {a.unit ?? ''}
-                {a.changed_in_rework && (
-                  <span className="tag warn" title="alterada no rework">
-                    era {num(a.previous_value)}
-                  </span>
-                )}
-              </td>
-              <td>
-                <span className="tag">{a.origin === 'code' ? 'código' : 'LLM (qualitativa)'}</span>
-              </td>
-              <td>{a.source_id && <Chips caseId={caseId} ids={[a.source_id]} />}</td>
-              <td className="small">{a.justification}</td>
+      <Fold title="Estruturas alternativas" open>
+        <p className="muted small">Comparáveis, sem preferência do sistema. A escolha é do analista.</p>
+        <AlternativesTable alternatives={r.alternatives} />
+      </Fold>
+
+      <Fold title={`Pendências e incertezas (${r.missing_data.length + r.uncertainties.length})`}>
+        <Items title="Dados ausentes" items={r.missing_data} />
+        <Items title="Incertezas" items={r.uncertainties} />
+      </Fold>
+
+      <Fold title="Fatos e premissas">
+        <Items title="Fatos" items={r.facts} />
+        <h4>Premissas</h4>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Premissa</th>
+              <th>Valor</th>
+              <th>Origem</th>
+              <th>Justificativa</th>
             </tr>
+          </thead>
+          <tbody>
+            {r.assumptions.map((a) => (
+              <tr key={a.name} className={a.changed_in_rework ? 'changed' : ''}>
+                <td>
+                  {a.name} {a.source_id && <SourceChip id={a.source_id} label="fonte" />}
+                </td>
+                <td className="num">
+                  {num(a.value)} {a.unit ?? ''}
+                  {a.changed_in_rework && <span className="was">antes {num(a.previous_value)}</span>}
+                </td>
+                <td>{a.origin === 'code' ? 'código' : 'modelo (qualitativa)'}</td>
+                <td className="small">{a.justification}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Fold>
+
+      <Fold
+        title={`Revisão: ${REVIEW_STATUS_LABEL[r.review.review_status] ?? r.review.review_status}, ${r.review.open_count} aberto(s), ${r.review.resolved_count} resolvido(s)`}
+      >
+        {r.review.overall_assessment && <p className="small">{r.review.overall_assessment}</p>}
+        <Findings findings={r.review.findings} />
+      </Fold>
+
+      <Fold title="Contribuição da squad">
+        <SquadContribution report={r} state={state} />
+      </Fold>
+
+      <Fold title={`Fontes (${r.sources.length})`}>
+        <ul className="sources">
+          {r.sources.map((s) => (
+            <li key={s.id}>
+              <SourceChip id={s.id} />
+              <span className="small">{s.label}</span>
+              {s.agent_id && <span className="muted small">{agentName(s.agent_id)}</span>}
+            </li>
           ))}
-        </tbody>
-      </table>
-
-      <div className="two-col">
-        <Section title="Fatores favoráveis" items={r.favorable_factors} caseId={caseId} />
-        <Section title="Fatores de risco" items={r.risk_factors} caseId={caseId} />
-      </div>
-
-      <h3>Cenários de stress</h3>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>cenário</th>
-            <th>choques</th>
-            <th>geração de caixa</th>
-            <th>cobertura</th>
-            <th>classificação</th>
-            <th>cálculo</th>
-          </tr>
-        </thead>
-        <tbody>
-          {r.stress_scenarios.map((s) => (
-            <tr key={s.scenario_id}>
-              <td>{s.label}</td>
-              <td className="small">
-                {Object.entries(s.shocks)
-                  .map(([k, v]) => `${k} ${pct(v)}`)
-                  .join(' · ') || 'base'}
-              </td>
-              <td>{brl(s.expected_cash_generation)}</td>
-              <td>
-                <b>{num(s.coverage, 2)}x</b>
-              </td>
-              <td>
-                <span className={`tag ${s.classification}`}>{CLASSIFICATION_LABEL[s.classification] ?? s.classification}</span>
-              </td>
-              <td>
-                <Chips caseId={caseId} ids={[s.calculation_id]} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div className="two-col">
-        <Section title="Incertezas" items={r.uncertainties} caseId={caseId} />
-        <Section title="Dados ausentes" items={r.missing_data} caseId={caseId} />
-      </div>
-
-      <h3>Alternativas de estruturação (comparáveis, sem preferência do sistema)</h3>
-      <AlternativesGrid caseId={caseId} alternatives={r.alternatives} />
-
-      <h3>
-        Findings do Review · {r.review.review_status} · {r.review.open_count} abertos · {r.review.resolved_count} resolvidos
-      </h3>
-      {r.review.overall_assessment && <p className="small">{r.review.overall_assessment}</p>}
-      <Findings caseId={caseId} findings={r.review.findings} />
-
-      <h3>Governança do case</h3>
-      <div className="badges">
-        <span className="tag ok">escopo: {r.governance.case_scope_client_ids.join(', ')}</span>
-        <span className="tag ok">permissões alteradas: {String(r.governance.permissions_changed)}</span>
-        <span className="tag">purpose: {r.governance.purpose}</span>
-        <span className={`tag ${r.governance.permission_denials ? 'danger' : ''}`}>
-          {r.governance.permission_denials} negações
-        </span>
-        <span className={`tag ${r.governance.security_events ? 'danger' : ''}`}>
-          {r.governance.security_events} eventos de segurança
-        </span>
-        <span className="tag">{r.governance.fields_hidden_total} campos ocultados</span>
-      </div>
-      <table className="table small">
-        <thead>
-          <tr>
-            <th>agente</th>
-            <th>domínios acessados</th>
-            <th>tool calls</th>
-            <th>negadas</th>
-            <th>campos ocultados</th>
-            <th>LLM</th>
-          </tr>
-        </thead>
-        <tbody>
-          {r.governance.agents.map((a) => (
-            <tr key={a.agent_id}>
-              <td>{shortAgent(a.agent_id)}</td>
-              <td>{a.data_domains_accessed.map((d) => DOMAIN_LABEL[d] ?? d).join(', ') || '—'}</td>
-              <td>{a.tool_calls}</td>
-              <td>{a.denied_calls}</td>
-              <td>{a.fields_hidden}</td>
-              <td>{a.llm_calls} chamadas</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <h3>Fontes ({r.sources.length})</h3>
-      <ul className="sources">
-        {r.sources.map((s) => (
-          <li key={s.id}>
-            <Chips caseId={caseId} ids={[s.id]} /> <span className="small">{s.label}</span>
-            {s.agent_id && <span className="muted small"> · {shortAgent(s.agent_id)}</span>}
-            {s.mock && <span className="tag">fictício</span>}
-          </li>
-        ))}
-      </ul>
-    </section>
+        </ul>
+      </Fold>
+    </article>
   )
 }
 
-function Section({ title, items, caseId }: { title: string; items: ReportItem[]; caseId: string }) {
+function Fold({
+  title,
+  origin,
+  open,
+  inner,
+  children,
+}: {
+  title: string
+  origin?: 'code' | 'llm'
+  open?: boolean
+  inner?: boolean
+  children: ReactNode
+}) {
   return (
-    <div>
-      <h3>{title}</h3>
+    <details className={`fold${inner ? ' inner' : ''}`} open={open}>
+      <summary>
+        <ChevronDown size={16} className="chev" />
+        <span>{title}</span>
+        {origin === 'code' && <span className="origin code">calculado por código</span>}
+        {origin === 'llm' && <span className="origin llm">texto do modelo, com evidências</span>}
+      </summary>
+      <div className="fold-body">{children}</div>
+    </details>
+  )
+}
+
+function StressTable({ report }: { report: Report }) {
+  return (
+    <table className="table">
+      <thead>
+        <tr>
+          <th>Cenário</th>
+          <th>Geração de caixa</th>
+          <th>Cobertura</th>
+          <th>Classificação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {report.stress_scenarios.map((s) => (
+          <tr key={s.scenario_id}>
+            <td>
+              {s.label}
+              <div className="muted small">
+                {Object.entries(s.shocks)
+                  .map(([k, v]) => `${k} ${pct(v)}`)
+                  .join(', ') || 'sem choque'}
+              </div>
+            </td>
+            <td className="num">{brl(s.expected_cash_generation)}</td>
+            <td className="num strong">{num(s.coverage, 2)}x</td>
+            <td>
+              <span className={`tag ${s.classification}`}>{CLASSIFICATION_LABEL[s.classification] ?? s.classification}</span>
+              <SourceChip id={s.calculation_id} label="cálculo" />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function Items({ title, items }: { title: string; items: ReportItem[] }) {
+  return (
+    <>
+      <h4>{title}</h4>
       {items.length === 0 ? (
-        <p className="muted small">nenhum item</p>
+        <p className="muted small">Nenhum item.</p>
       ) : (
         <ul className="items">
           {items.map((it, i) => (
             <li key={`${it.code ?? ''}-${i}`}>
-              {it.severity && <span className={`tag ${it.severity}`}>{it.severity}</span>} {it.text}{' '}
-              <Chips caseId={caseId} ids={it.evidence_ids} />
+              {it.severity && <span className={`tag ${it.severity}`}>{SEVERITY_LABEL[it.severity]}</span>} {it.text}{' '}
+              <Chips ids={it.evidence_ids} />
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </>
   )
 }
 
-const ALT_ROWS: Array<[string, (a: Alternative) => React.ReactNode]> = [
+const ALT_ROWS: Array<[string, (a: Alternative) => ReactNode]> = [
   ['Produto', (a) => a.product_id],
   ['Valor', (a) => brl(a.amount)],
   ['Prazo', (a) => `${a.tenor_months} meses`],
@@ -251,13 +253,13 @@ const ALT_ROWS: Array<[string, (a: Alternative) => React.ReactNode]> = [
   ['Condicionantes', (a) => a.conditions.join(', ') || '—'],
   ['Racional', (a) => a.rationale],
   ['Quando faz sentido', (a) => a.when_it_fits],
-  ['Vantagens', (a) => <List items={a.advantages} />],
-  ['Riscos', (a) => <List items={a.risks} />],
-  ['Trade-offs', (a) => <List items={a.trade_offs} />],
-  ['Riscos endereçados', (a) => a.addressed_risk_codes.join(', ') || '—'],
+  ['Vantagens', (a) => <Plain items={a.advantages} />],
+  ['Riscos', (a) => <Plain items={a.risks} />],
+  ['Trade-offs', (a) => <Plain items={a.trade_offs} />],
+  ['Evidências', (a) => <Chips ids={a.evidence_ids} />],
 ]
 
-function List({ items }: { items: string[] }) {
+function Plain({ items }: { items: string[] }) {
   return (
     <ul className="plain">
       {items.map((s) => (
@@ -267,56 +269,80 @@ function List({ items }: { items: string[] }) {
   )
 }
 
-function AlternativesGrid({ caseId, alternatives }: { caseId: string; alternatives: Alternative[] }) {
+function AlternativesTable({ alternatives }: { alternatives: Alternative[] }) {
   return (
-    <table className="table alternatives">
-      <thead>
-        <tr>
-          <th></th>
-          {alternatives.map((a) => (
-            <th key={a.id}>
-              {a.id} · {a.name}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {ALT_ROWS.map(([label, render]) => (
-          <tr key={label}>
-            <th>{label}</th>
+    <div className="table-scroll">
+      <table className="table alternatives">
+        <thead>
+          <tr>
+            <th />
             {alternatives.map((a) => (
-              <td key={a.id}>{render(a)}</td>
+              <th key={a.id}>{a.name}</th>
             ))}
           </tr>
-        ))}
-        <tr>
-          <th>Evidências</th>
-          {alternatives.map((a) => (
-            <td key={a.id}>
-              <Chips caseId={caseId} ids={a.evidence_ids} />
-            </td>
+        </thead>
+        <tbody>
+          {ALT_ROWS.map(([label, render]) => (
+            <tr key={label}>
+              <th>{label}</th>
+              {alternatives.map((a) => (
+                <td key={a.id}>{render(a)}</td>
+              ))}
+            </tr>
           ))}
-        </tr>
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
   )
 }
 
-export function Findings({ caseId, findings }: { caseId: string; findings: Finding[] }) {
+function Findings({ findings }: { findings: Finding[] }) {
   const sorted = [...findings].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
-  if (!sorted.length) return <p className="muted small">nenhum finding</p>
+  if (!sorted.length) return <p className="muted small">Nenhum achado.</p>
   return (
     <ul className="findings">
       {sorted.map((f) => (
         <li key={f.id} className={f.status}>
-          <span className={`tag ${f.severity}`}>{f.severity}</span> <code>{f.code}</code>{' '}
-          <span className="tag">{f.origin}</span> <span className={`tag status-${f.status}`}>{f.status}</span>
-          {f.owner_agent && <span className="muted small"> · owner {shortAgent(f.owner_agent)}</span>}
-          {f.required_action && <span className="muted small"> · ação: {f.required_action}</span>}
-          <div className="small">{f.message}</div>
-          <Chips caseId={caseId} ids={f.evidence_ids} />
+          <div className="finding-head">
+            <span className={`tag ${f.severity}`}>{SEVERITY_LABEL[f.severity]}</span>
+            <span className={`tag status-${f.status}`}>{FINDING_STATUS[f.status] ?? f.status}</span>
+            {f.owner_agent && <span className="muted small">responsável: {agentName(f.owner_agent)}</span>}
+          </div>
+          <p className="small">{f.message}</p>
+          <Chips ids={f.evidence_ids} />
         </li>
       ))}
     </ul>
+  )
+}
+
+function SquadContribution({ report, state }: { report: Report; state: CaseState | null }) {
+  const gov = new Map(report.governance.agents.map((a) => [a.agent_id, a]))
+  const owned = (id: string) => report.review.findings.filter((f) => f.owner_agent === id).length
+  return (
+    <table className="table">
+      <thead>
+        <tr>
+          <th>Agente</th>
+          <th>Rodadas</th>
+          <th>Acessos</th>
+          <th>Negados</th>
+          <th>Domínios</th>
+          <th>Achados</th>
+        </tr>
+      </thead>
+      <tbody>
+        {(state?.agents ?? []).map((a) => (
+          <tr key={a.agent_id}>
+            <td>{agentName(a.agent_id)}</td>
+            <td className="num">{a.round}</td>
+            <td className="num">{gov.get(a.agent_id)?.tool_calls ?? a.tool_calls}</td>
+            <td className={`num${a.denied_calls ? ' danger-text' : ''}`}>{a.denied_calls}</td>
+            <td className="small">{a.data_domains_accessed.map((d) => DOMAIN_LABEL[d] ?? d).join(', ') || '—'}</td>
+            <td className="num">{owned(a.agent_id)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }

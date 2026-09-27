@@ -48,6 +48,7 @@ export const api = {
   events: (id: string, after = 0) => fetch(`/api/cases/${id}/events?after=${after}`).then(json<CaseEvent[]>),
   provideInput: (id: string, body: InputRequest) => post(`/api/cases/${id}/input`, body).then(json<CaseState>),
   run: (id: string) => post(`/api/cases/${id}/run`, {}).then(json<CaseState>),
+  retry: (id: string) => post(`/api/cases/${id}/retry`, {}).then(json<CaseState>),
   report: (id: string) => fetch(`/api/cases/${id}/report`).then(json<Report>),
   evidence: (id: string, evidenceId: string) =>
     fetch(`/api/cases/${id}/evidence/${encodeURIComponent(evidenceId)}`).then(json<EvidenceItem>),

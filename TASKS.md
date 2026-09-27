@@ -84,6 +84,7 @@ Critério: `pytest` roda (mesmo que só import), `npm run build` passa, ninguém
 - [ ] S3.5 `orchestration/orchestrator.py`: state machine §4; bootstrap → `SCOPE_FROZEN`; `waiting_input` (resolver/gate); execução em `asyncio.Task`; rework 1× (owner + dependentes); `EXECUTION_FAILED`
 - [ ] S3.6 `orchestration/consolidator.py`: `Report` por template; números só de `CALC-*`; `governance` view (domínios por agente, denials, security events, `fields_hidden`); `human_gate`
 - [ ] S3.7 Human gate: `approve_next_step` → `CASE_COMPLETED` (`completed_demo`); `request_adjustment` → registra comentário no relatório
+- [x] S5 Ajuste humano reexecuta o agente escolhido (`target_agent`) + dependentes; `POST /cases/{id}/retry` retoma execução que falhou (checkpoints por agente/rodada) — `tests/test_s5_adjust_retry.py`
 - [ ] S3.8 Testes: `test_validators.py` (61 vs 58 → `ASSUMPTION_ABOVE_BASELINE_UNJUSTIFIED`; `CALC_INCONSISTENT`; `EVIDENCE_NOT_FOUND`; `RISK_IGNORED_BY_STRUCTURE`), `test_output_guard.py`, `test_orchestrator.py` com provider stub de teste (gate bloqueia Risk; rework 1× e para; case não conclui sem `approve_next_step`; scope imutável)
 
 ---

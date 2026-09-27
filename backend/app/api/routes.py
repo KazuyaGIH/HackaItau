@@ -65,6 +65,15 @@ async def run_case(case_id: str, c: Deps) -> CaseState:
         raise _handle(exc) from exc
 
 
+@router.post("/cases/{case_id}/retry", response_model=CaseState, status_code=202)
+async def retry_case(case_id: str, c: Deps) -> CaseState:
+    """Retoma um case `failed` a partir do agente que falhou (os que já concluíram não rodam de novo)."""
+    try:
+        return c.orchestrator.start_retry(case_id).state
+    except OrchestratorError as exc:
+        raise _handle(exc) from exc
+
+
 @router.get("/cases/{case_id}/report", response_model=Report)
 def get_report(case_id: str, c: Deps) -> Report:
     try:
@@ -91,8 +100,9 @@ def get_evidence(case_id: str, evidence_id: str, c: Deps) -> SourceRecord | Calc
 
 
 @router.post("/cases/{case_id}/human-review", response_model=CaseState)
-def human_review(case_id: str, body: HumanReviewRequest, c: Deps) -> CaseState:
+async def human_review(case_id: str, body: HumanReviewRequest, c: Deps) -> CaseState:
+    """async: um ajuste com target_agent dispara a reexecução em background no event loop."""
     try:
-        return c.orchestrator.human_review(case_id, body.decision, body.comment).state
+        return c.orchestrator.human_review(case_id, body.decision, body.comment, body.target_agent).state
     except OrchestratorError as exc:
         raise _handle(exc) from exc

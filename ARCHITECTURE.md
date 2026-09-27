@@ -107,9 +107,12 @@ POST /api/cases/{id}/run
   ├─ OUTPUT GUARD (determinístico) → itens ofensivos redigidos/movidos + finding GUARD_*; nunca entrega sem passar
   ├─ RESULT_CONSOLIDATED → HUMAN_REVIEW_REQUIRED → status=human_review_required
   │
-POST /api/cases/{id}/human-review {decision, comment}
+POST /api/cases/{id}/human-review {decision, comment, target_agent?}
   ├─ approve_next_step  → HUMAN_APPROVED → CASE_COMPLETED  (status=completed_demo; NÃO é aprovação de crédito)
-  └─ request_adjustment → HUMAN_ADJUSTMENT_REQUESTED (P0: registra comentário no relatório; P1: 1 re-execução do Structuring)
+  └─ request_adjustment → HUMAN_ADJUSTMENT_REQUESTED; com target_agent reabre esse agente + dependentes numa nova rodada
+     (comentário do analista entra como untrusted `analyst_comment`; params de reworks anteriores são mantidos) →
+     Review → consolidate → human gate de novo (máx. 3 ajustes). Sem target_agent: só registra o comentário.
+POST /api/cases/{id}/retry  (case `failed`) → retoma do agente que falhou; o que já concluiu não roda de novo
 ```
 
 Toda a execução (`/run`) roda como `asyncio.Task` em background dentro do processo; o frontend acompanha por polling dos eventos.
@@ -671,7 +674,8 @@ Congelar = merge de um PR "kernel" contendo **apenas** `core/schemas/*`, `llm/pr
    | `GET` | `/api/cases/{id}` | → `CaseState` (status, scope, selected_agents, agent_outputs compactos, review, report?, counters) |
    | `GET` | `/api/cases/{id}/events?after=<seq>` | → `Event[]` |
    | `POST` | `/api/cases/{id}/input` | `{answers: dict}` → `CaseState` (só em `waiting_input`) |
-   | `POST` | `/api/cases/{id}/human-review` | `{decision: approve_next_step \| request_adjustment, comment}` → `CaseState` |
+   | `POST` | `/api/cases/{id}/human-review` | `{decision: approve_next_step \| request_adjustment, comment, target_agent?}` → `CaseState` (ajuste com `target_agent` reexecuta em background) |
+   | `POST` | `/api/cases/{id}/retry` | → `202 CaseState` (só `failed`; retoma a partir do agente que falhou) |
    | `GET` | `/api/health` | → `{ok, llm_mode, demo_mode}` |
    | `GET` | `/api/agents` | → `AgentCard[]` (**P1**) |
 10. **Contrato de rework:** `ReworkInstruction{finding_ids, required_action, params: dict, message}` e a tabela `remediations.py`.
@@ -714,7 +718,7 @@ Streams não precisam ser um por pessoa/agente; são fronteiras de merge sem con
 ### P1 — se der tempo, sem mudar contratos
 - **Deploy público** (uma URL, sem login) + keep-alive para a demo.
 - Tool-calling dinâmico do LLM restrito a `card.tools`, com `max_tool_rounds`.
-- `request_adjustment` re-executa Structuring 1× com o comentário humano como untrusted input.
+- ~~`request_adjustment` re-executa Structuring 1×~~ feito: reabre o agente escolhido pelo analista (e dependentes), até 3×.
 - Resumo executivo por LLM (passa pelo guard).
 - `model_role fast/strong` e roteamento por agente.
 - Dashboard de tokens/latência/custo por agente.
@@ -775,7 +779,7 @@ Nada aqui é implementado agora; todos os pontos são extensões que **não** ex
 3. **"Selecionar agentes" dinâmico (README §9).** **Decisão:** seleção determinística por capability no registry a partir de um plan template; o LLM só classifica o intent.
 4. **Source IDs e audit timeline como P1 (README §61).** Os invariantes de segurança dependem deles. **Decisão:** P0.
 5. **Observabilidade/tokens (README §33–34).** Reduzido a campos em `LLM_CALLED`; contadores simples na UI. Dashboard é P1.
-6. **Human Gate "solicitar ajuste" reabre agente (README §8).** **Decisão:** P0 registra; P1 re-executa Structuring 1×. O case nunca conclui sem `approve_next_step`.
+6. **Human Gate "solicitar ajuste" reabre agente (README §8).** **Decisão:** o analista escolhe o agente (`target_agent`); ele e seus dependentes rodam numa nova rodada com o comentário como untrusted input, até 3 ajustes. Sem `target_agent`, só registra. O case nunca conclui sem `approve_next_step`.
 7. **Agent Card `human_gate_required_for` (README §13).** Documental no MVP (não há tools de ação). Mantido para extensão.
 8. **`DEMO_MODE` (README §47).** Só pré-carrega a demanda e habilita `demo_options`; não altera o provider de LLM (o LLM real continua obrigatório).
 9. **Estrutura de repositório (README §45).** `docker-compose.yml`, `services/telemetry.py`, múltiplos módulos de API e `docs/architecture.md` removidos/fundidos; Next.js trocado por Vite.

@@ -79,6 +79,8 @@ export interface InputRequest {
 export interface HumanReviewRequest {
   decision: 'approve_next_step' | 'request_adjustment'
   comment: string
+  // request_adjustment + target_agent: o backend reabre esse agente (e dependentes) com o comentário
+  target_agent?: string
 }
 
 export interface CaseScope {

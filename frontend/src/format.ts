@@ -48,12 +48,28 @@ export const DOMAIN_LABEL: Record<string, string> = {
   market_data: 'Mercado',
   product_catalog: 'Catálogo',
   knowledge: 'Políticas/KB',
+  calculations: 'Cálculos',
 }
 
 export const shortAgent = (id: string | null | undefined) =>
   ({
-    agro_eligibility: 'Eligibility',
-    agro_credit_risk: 'Risk',
-    agro_structuring: 'Structuring',
-    credit_review: 'Review',
+    agro_eligibility: 'Elegibilidade',
+    agro_credit_risk: 'Risco',
+    agro_structuring: 'Estruturação',
+    credit_review: 'Revisor',
   })[id ?? ''] ?? (id ?? 'orquestrador')
+
+export const ELIGIBILITY_LABEL: Record<string, string> = {
+  ready: 'pronto para seguir',
+  ready_with_warnings: 'pronto, com alertas',
+  blocked: 'bloqueado: falta informação',
+}
+
+export const REVIEW_STATUS_LABEL: Record<string, string> = {
+  passed: 'aprovada',
+  passed_with_findings: 'aprovada com ressalvas',
+  rework_required: 'retrabalho necessário',
+}
+
+// Códigos técnicos (ex.: avisos do validador) em texto legível, sem esconder o código original.
+export const humanizeCode = (code: string) => code.replace(/_/g, ' ').replace(':', ' — ')

@@ -8,7 +8,15 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from app.config import APP_DIR
-from app.core.schemas.agent import AgentCard, Assumption, TaskSpec, ToolCallSpec
+from app.core.schemas.agent import (
+    CARRY_OVER_ACTION,
+    HUMAN_ADJUSTMENT_ACTION,
+    AgentCard,
+    Assumption,
+    ReworkInstruction,
+    TaskSpec,
+    ToolCallSpec,
+)
 from app.core.schemas.context import ExecutionContext
 from app.core.schemas.evidence import EvidenceBundle
 from app.core.schemas.outputs import OUTPUT_SCHEMAS
@@ -97,6 +105,20 @@ async def gather_required_data(
     return bundle
 
 
+def _rework_section(rework: ReworkInstruction) -> str:
+    """Seção de rework do prompt. O texto (finding ou comentário do analista) entra sempre como untrusted_data."""
+    action = f"Ação requerida (backend): {rework.required_action} {rework.params}"
+    if rework.required_action == CARRY_OVER_ACTION:
+        return f"## Parâmetros de rodadas anteriores (backend)\n{action}"
+    if rework.required_action == HUMAN_ADJUSTMENT_ACTION:
+        return (
+            "## Ajuste solicitado pelo analista (humano)\n"
+            "Revise seu resultado considerando o comentário abaixo, sem sair das evidências e dos cálculos citados.\n"
+            f"{action}\n" + wrap_untrusted("analyst_comment", rework.message)
+        )
+    return f"## Rework solicitado pelo Review\n{action}\n" + wrap_untrusted("review_finding", rework.message)
+
+
 class BaseAgent:
     card: AgentCard
 
@@ -125,11 +147,7 @@ class BaseAgent:
         if task.inputs:
             sections.append("## Inputs (projeção de resultados anteriores)\n" + wrap_untrusted("task_inputs", task.inputs))
         if task.rework is not None:
-            sections.append(
-                "## Rework solicitado pelo Review\n"
-                f"Ação requerida (backend): {task.rework.required_action} {task.rework.params}\n"
-                + wrap_untrusted("review_finding", task.rework.message)
-            )
+            sections.append(_rework_section(task.rework))
         sections.append("## Evidências disponíveis\n" + (render_evidence(evidence) or "(nenhuma)"))
         sections.append(
             "## Formato de saída\nResponda apenas com JSON válido conforme este schema:\n"

@@ -4,6 +4,8 @@ Bootstrap: create → interpret → resolve → SCOPE_FROZEN → planned (ou wai
 Execução (`run`): Eligibility (gate) → Risk → Structuring → Review (validators + red team) → rework ≤ 1 →
 consolidate → Output Guard → human_review_required. O LLM só interpreta a demanda e raciocina dentro dos agentes;
 toda transição de estado, autorização e número material é código.
+Ajuste humano: o analista reabre um agente com um comentário → ele e seus dependentes rodam numa nova rodada →
+Review → consolidate → human gate de novo. Retry: um case `failed` retoma do ponto em que parou (checkpoints).
 """
 
 import asyncio
@@ -15,13 +17,13 @@ from app.agents.review.validators import ReviewContext, run_validators
 from app.agents.runtime import AgentExecutionError, AgentRuntime
 from app.calculations.policy_params import load_policy_params
 from app.config import Settings
-from app.core.schemas.agent import AgentResult, ReworkInstruction, TaskSpec
+from app.core.schemas.agent import CARRY_OVER_ACTION, HUMAN_ADJUSTMENT_ACTION, AgentResult, ReworkInstruction, TaskSpec
 from app.core.schemas.case import AgentCardState, AgentStatus, CaseStatus, DemoOptions, MissingInfoRequest
 from app.core.schemas.context import CaseScope, ExecutionContext, UserIdentity
 from app.core.schemas.events import EventType
 from app.core.schemas.outputs import AIReviewOutput, EligibilityOutput, Finding, ReviewOutput
 from app.core.schemas.report import HumanGateView
-from app.core.store import CaseRecord, CaseStore
+from app.core.store import CaseRecord, CaseStore, RunJob
 from app.data.repository import DataRepository, KnowledgeRetriever
 from app.governance.bootstrap_resolver import BootstrapClientResolver
 from app.governance.loader import load_identities
@@ -35,6 +37,7 @@ from app.tools.gateway import Toolbox
 PURPOSE = "credit_analysis_agro"
 PRODUCT_FAMILY_BY_PURPOSE = {"custeio": "credito_rural_custeio"}
 MAX_REWORK_ROUNDS = 1
+MAX_HUMAN_ADJUSTMENTS = 3
 
 
 class OrchestratorError(Exception):
@@ -163,15 +166,57 @@ class Orchestrator:
     def start_run(self, case_id: str) -> CaseRecord:
         """Valida e dispara `run` em background (asyncio.Task); o frontend acompanha por polling."""
         rec = self._runnable(case_id)
-        rec.state.status = CaseStatus.running
-        rec.touch()
+        self._begin_execution(rec)
         rec.run_task = asyncio.get_running_loop().create_task(self._run_guarded(rec))
         return rec
 
     async def run(self, case_id: str) -> CaseRecord:
         rec = self._runnable(case_id)
-        rec.state.status = CaseStatus.running
+        self._begin_execution(rec)
         await self._run_guarded(rec)
+        return rec
+
+    def _begin_execution(self, rec: CaseRecord) -> None:
+        """Execução nova (inclusive depois de um input): descarta checkpoints de tentativas anteriores."""
+        assert rec.state.interpreted is not None
+        rec.job = RunJob(kind="execution")
+        rec.completed.clear()
+        rec.reviews.clear()
+        rec.results.clear()
+        rec.first_round.clear()
+        rec.sticky_params.clear()
+        rec.state.rework_rounds = 0
+        rec.state.status = CaseStatus.running
+        plan = plan_for(rec.state.interpreted.intent)
+        rec.events.emit(EventType.ORCHESTRATOR_STARTED, {"phase": "execution", "plan": [s.agent_id for s in plan]})
+        rec.touch()
+
+    def start_retry(self, case_id: str) -> CaseRecord:
+        """Retoma em background uma execução que falhou, a partir do agente em que parou."""
+        rec = self._retryable(case_id)
+        rec.run_task = asyncio.get_running_loop().create_task(self._run_guarded(rec))
+        return rec
+
+    async def retry(self, case_id: str) -> CaseRecord:
+        rec = self._retryable(case_id)
+        await self._run_guarded(rec)
+        return rec
+
+    def _retryable(self, case_id: str) -> CaseRecord:
+        rec = self._get(case_id)
+        # sem job = falhou antes de executar (ex.: bootstrap negado): não há o que retomar
+        if rec.state.status != CaseStatus.failed or rec.job is None:
+            raise OrchestratorError("not_retryable", f"case em '{rec.state.status.value}' não pode ser retomado")
+        if self._runtime.provider is None:
+            raise OrchestratorError("llm_not_configured", "LLM não configurado: defina LLM_API_KEY no .env", 503)
+        failed_agent = next((a.agent_id for a in rec.state.agents if a.status == AgentStatus.failed), None)
+        rec.events.emit(
+            EventType.ORCHESTRATOR_STARTED,
+            {"phase": "retry", "job": rec.job.kind, "round": rec.job.round, "failed_agent": failed_agent},
+        )
+        rec.state.status = CaseStatus.running
+        rec.state.error = None
+        rec.touch()
         return rec
 
     def _runnable(self, case_id: str) -> CaseRecord:
@@ -186,7 +231,10 @@ class Orchestrator:
 
     async def _run_guarded(self, rec: CaseRecord) -> None:
         try:
-            await self._execute(rec)
+            if rec.job is not None and rec.job.kind == "human_adjustment":
+                await self._execute_adjustment(rec, rec.job)
+            else:
+                await self._execute(rec)
         except AgentExecutionError as exc:
             self._fail(rec, f"{exc.agent_id}:{exc.reason}", exc.agent_id)
         except Exception as exc:  # noqa: BLE001 — falha inesperada vira estado auditável, nunca traceback ao usuário
@@ -206,31 +254,28 @@ class Orchestrator:
         assert rec.state.interpreted is not None
         plan = plan_for(rec.state.interpreted.intent)
         steps = {s.agent_id: s for s in plan}
-        rec.events.emit(EventType.ORCHESTRATOR_STARTED, {"phase": "execution", "plan": [s.agent_id for s in plan]})
 
         results: dict[str, AgentResult] = {}
         for step in plan:
             if step.agent_id == REVIEW:
                 continue
-            results[step.agent_id] = await self._run_agent(rec, user, step, results, round_=1)
+            results[step.agent_id] = await self._run_step(rec, user, step, results, round_=1)
             if step.agent_id == ELIGIBILITY and self._eligibility_blocks(rec, results[step.agent_id]):
                 return
         first_round = dict(results)
+        rec.first_round = dict(first_round)
 
         review = await self._review(rec, user, steps[REVIEW], results, round_=1, previous=None)
 
-        if review.reexecution_required and review.reopen_agent and rec.state.rework_rounds < MAX_REWORK_ROUNDS:
-            rec.state.rework_rounds += 1
+        # só existe uma rodada automática (a 2); a condição não depende de contador para que um retry a retome
+        if review.reexecution_required and review.reopen_agent and MAX_REWORK_ROUNDS > 0:
+            rec.state.rework_rounds = 1
             rework = self._rework_instruction(review)
             reopen = [review.reopen_agent, *dependents_of(plan, review.reopen_agent)]
             for agent_id in reopen:
-                rec.events.emit(
-                    EventType.TASK_REOPENED,
-                    {"round": 2, "finding_ids": rework.finding_ids if rework else [], "action": review.reopen_agent},
-                    agent_id=agent_id,
-                )
-                self._set_agent(rec, agent_id, AgentStatus.reopened)
-                results[agent_id] = await self._run_agent(
+                finding_ids = rework.finding_ids if rework else []
+                self._reopen(rec, agent_id, round_=2, finding_ids=finding_ids, action=review.reopen_agent)
+                results[agent_id] = await self._run_step(
                     rec, user, steps[agent_id], results, round_=2, rework=rework if agent_id == review.reopen_agent else None
                 )
             review = await self._review(rec, user, steps[REVIEW], results, round_=2, previous=review)
@@ -238,6 +283,64 @@ class Orchestrator:
                 # limite de rework atingido: findings seguem abertos no relatório; humano decide
                 review = review.model_copy(update={"reexecution_required": False, "reopen_agent": None})
 
+        self._finish(rec, results, first_round, review)
+
+    async def _execute_adjustment(self, rec: CaseRecord, job: RunJob) -> None:
+        """Ajuste pedido no human gate: reabre o agente escolhido e seus dependentes numa nova rodada."""
+        user = self._user(rec.state.user_id)
+        assert rec.state.interpreted is not None and job.target_agent is not None
+        plan = plan_for(rec.state.interpreted.intent)
+        steps = {s.agent_id: s for s in plan}
+
+        results = dict(rec.results)
+        for agent_id in [job.target_agent, *dependents_of(plan, job.target_agent)]:
+            self._reopen(rec, agent_id, round_=job.round, finding_ids=[], action=job.target_agent, source="human")
+            results[agent_id] = await self._run_step(
+                rec, user, steps[agent_id], results, round_=job.round, rework=self._adjustment_rework(rec, job, agent_id)
+            )
+            if agent_id == ELIGIBILITY and self._eligibility_blocks(rec, results[agent_id]):
+                return
+
+        review = await self._review(rec, user, steps[REVIEW], results, round_=job.round, previous=rec.state.review)
+        if review.reexecution_required:
+            # sem rework automático depois de um ajuste humano: o finding fica aberto e o humano decide
+            review = review.model_copy(update={"reexecution_required": False, "reopen_agent": None})
+        self._finish(rec, results, rec.first_round or results, review)
+
+    @staticmethod
+    def _adjustment_rework(rec: CaseRecord, job: RunJob, agent_id: str) -> ReworkInstruction | None:
+        # params de reworks anteriores continuam valendo (ex.: baseline histórico no Risk), senão o erro corrigido voltaria
+        params = dict(rec.sticky_params.get(agent_id, {}))
+        if agent_id == job.target_agent:
+            return ReworkInstruction(
+                finding_ids=[], required_action=HUMAN_ADJUSTMENT_ACTION, params=params, message=job.comment
+            )
+        if params:
+            return ReworkInstruction(finding_ids=[], required_action=CARRY_OVER_ACTION, params=params, message="")
+        return None
+
+    def _reopen(
+        self, rec: CaseRecord, agent_id: str, *, round_: int, finding_ids: list[str], action: str, source: str = "review"
+    ) -> None:
+        already = any(
+            e.agent_id == agent_id and e.payload.get("round") == round_ for e in rec.events.of_type(EventType.TASK_REOPENED)
+        )
+        if already:  # retomada: essa reabertura já foi registrada na tentativa anterior
+            return
+        payload: dict = {"round": round_, "finding_ids": finding_ids, "action": action}
+        if source != "review":
+            payload["source"] = source
+        rec.events.emit(EventType.TASK_REOPENED, payload, agent_id=agent_id)
+        self._set_agent(rec, agent_id, AgentStatus.reopened)
+
+    def _finish(
+        self,
+        rec: CaseRecord,
+        results: dict[str, AgentResult],
+        first_round: dict[str, AgentResult],
+        review: ReviewOutput,
+    ) -> None:
+        previous_comments = rec.state.report.human_gate.comments if rec.state.report else []
         rec.state.review = review
         report = consolidate(rec.state, rec.events, rec.evidence, results, first_round, review)
         rec.events.emit(
@@ -260,9 +363,31 @@ class Orchestrator:
             merged = review.model_copy(update={"findings": review.findings + result.findings})
             rec.state.review = merged
             result.report.review.findings = merged.findings
+        result.report.human_gate.comments = list(previous_comments)
         rec.state.report = result.report
+        rec.results = dict(results)
         rec.state.status = CaseStatus.human_review_required
         rec.events.emit(EventType.HUMAN_REVIEW_REQUIRED, {"actions": ["approve_next_step", "request_adjustment"]})
+
+    async def _run_step(
+        self,
+        rec: CaseRecord,
+        user: UserIdentity,
+        step: PlanStep,
+        results: dict[str, AgentResult],
+        *,
+        round_: int,
+        rework: ReworkInstruction | None = None,
+    ) -> AgentResult:
+        """Roda o agente — ou devolve o checkpoint, se essa rodada já concluiu numa tentativa anterior (retry)."""
+        key = f"{step.agent_id}@R{round_}"
+        if key in rec.completed:
+            return rec.completed[key]
+        if rework is not None and rework.params:
+            rec.sticky_params.setdefault(step.agent_id, {}).update(rework.params)
+        result = await self._run_agent(rec, user, step, results, round_=round_, rework=rework)
+        rec.completed[key] = result
+        return result
 
     async def _run_agent(
         self,
@@ -355,6 +480,10 @@ class Orchestrator:
         previous: ReviewOutput | None,
     ) -> ReviewOutput:
         assert rec.state.interpreted is not None
+        cached = rec.reviews.get(round_)
+        if cached is not None:  # retomada: essa revisão já concluiu
+            results[REVIEW] = rec.completed[f"{REVIEW}@R{round_}"]
+            return cached
         rec.events.emit(EventType.REVIEW_STARTED, {"round": round_}, agent_id=REVIEW)
         ctx = ReviewContext(
             results=results,
@@ -365,7 +494,7 @@ class Orchestrator:
         )
         validator_findings = _tag_round(run_validators(ctx), round_)
 
-        ai_result = await self._run_agent(rec, user, step, results, round_=round_)
+        ai_result = await self._run_step(rec, user, step, results, round_=round_)
         results[REVIEW] = ai_result
         ai_out = AIReviewOutput.model_validate(ai_result.output)
         ai_findings = _tag_round(ai_out.findings, round_)
@@ -380,6 +509,7 @@ class Orchestrator:
             validator_findings, ai_findings, ai_out.overall_assessment, rework_round=round_ - 1, previous=previous
         )
         rec.state.review = review
+        rec.reviews[round_] = review
         rec.events.emit(
             EventType.REVIEW_COMPLETED,
             {
@@ -401,10 +531,16 @@ class Orchestrator:
 
     # ------------------------------------------------------------- human gate
 
-    def human_review(self, case_id: str, decision: str, comment: str) -> CaseRecord:
-        rec = self._get(case_id)
-        if rec.state.status != CaseStatus.human_review_required:
-            raise OrchestratorError("not_in_human_review", f"case em '{rec.state.status.value}' não está em revisão humana")
+    def human_review(self, case_id: str, decision: str, comment: str, target_agent: str | None = None) -> CaseRecord:
+        """Decisão humana. `request_adjustment` com `target_agent` reexecuta a squad em background;
+        sem `target_agent`, só registra o comentário."""
+        rec = self._in_human_review(case_id)
+        if decision == "request_adjustment" and target_agent:
+            job = self._adjustment_job(rec, comment, target_agent)
+            self._record_adjustment(rec, comment, target_agent)
+            self._begin_adjustment(rec, job)
+            rec.run_task = asyncio.get_running_loop().create_task(self._run_guarded(rec))
+            return rec
         report = rec.state.report
         if decision == "approve_next_step":
             rec.events.emit(EventType.HUMAN_APPROVED, {"comment_len": len(comment)})
@@ -417,17 +553,71 @@ class Orchestrator:
                     comments=report.human_gate.comments + ([comment] if comment else []),
                 )
         elif decision == "request_adjustment":
-            rec.events.emit(EventType.HUMAN_ADJUSTMENT_REQUESTED, {"comment_len": len(comment)})
-            if report:
-                report.human_gate = HumanGateView(
-                    status="adjustment_requested",
-                    available_actions=["approve_next_step", "request_adjustment"],
-                    comments=report.human_gate.comments + ([comment] if comment else []),
-                )
+            self._record_adjustment(rec, comment, None)
         else:
             raise OrchestratorError("invalid_decision", "decision deve ser approve_next_step | request_adjustment", 422)
         rec.touch()
         return rec
+
+    async def adjust(self, case_id: str, comment: str, target_agent: str) -> CaseRecord:
+        """Variante aguardada do ajuste humano (testes e scripts)."""
+        rec = self._in_human_review(case_id)
+        job = self._adjustment_job(rec, comment, target_agent)
+        self._record_adjustment(rec, comment, target_agent)
+        self._begin_adjustment(rec, job)
+        await self._run_guarded(rec)
+        return rec
+
+    def _in_human_review(self, case_id: str) -> CaseRecord:
+        rec = self._get(case_id)
+        if rec.state.status != CaseStatus.human_review_required:
+            raise OrchestratorError("not_in_human_review", f"case em '{rec.state.status.value}' não está em revisão humana")
+        return rec
+
+    def _adjustment_job(self, rec: CaseRecord, comment: str, target_agent: str) -> RunJob:
+        assert rec.state.interpreted is not None
+        adjustable = [s.agent_id for s in plan_for(rec.state.interpreted.intent) if s.agent_id != REVIEW]
+        if target_agent not in adjustable:
+            raise OrchestratorError("invalid_target_agent", f"target_agent deve ser um de: {', '.join(adjustable)}", 422)
+        if not comment.strip():
+            raise OrchestratorError("comment_required", "descreva o ajuste que a squad deve fazer", 422)
+        if rec.human_adjustments >= MAX_HUMAN_ADJUSTMENTS:
+            raise OrchestratorError("adjustment_limit", f"limite de {MAX_HUMAN_ADJUSTMENTS} ajustes por case atingido")
+        if self._runtime.provider is None:
+            raise OrchestratorError("llm_not_configured", "LLM não configurado: defina LLM_API_KEY no .env", 503)
+        next_round = max((r.round for r in rec.completed.values()), default=1) + 1
+        return RunJob(kind="human_adjustment", round=next_round, target_agent=target_agent, comment=comment)
+
+    @staticmethod
+    def _record_adjustment(rec: CaseRecord, comment: str, target_agent: str | None) -> None:
+        payload: dict = {"comment_len": len(comment)}
+        if target_agent:
+            payload["target_agent"] = target_agent
+        rec.events.emit(EventType.HUMAN_ADJUSTMENT_REQUESTED, payload)
+        report = rec.state.report
+        if report:
+            report.human_gate = HumanGateView(
+                status="adjustment_requested",
+                available_actions=["approve_next_step", "request_adjustment"],
+                comments=report.human_gate.comments + ([comment] if comment else []),
+            )
+
+    def _begin_adjustment(self, rec: CaseRecord, job: RunJob) -> None:
+        assert rec.state.interpreted is not None and job.target_agent is not None
+        plan = plan_for(rec.state.interpreted.intent)
+        rec.job = job
+        rec.human_adjustments += 1
+        rec.state.status = CaseStatus.running
+        rec.events.emit(
+            EventType.ORCHESTRATOR_STARTED,
+            {
+                "phase": "human_adjustment",
+                "round": job.round,
+                "target_agent": job.target_agent,
+                "plan": [job.target_agent, *dependents_of(plan, job.target_agent), REVIEW],
+            },
+        )
+        rec.touch()
 
     # ------------------------------------------------------------- helpers
 

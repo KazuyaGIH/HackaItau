@@ -8,7 +8,19 @@ from typing import Any
 
 from app.core.events import EventLog
 from app.core.evidence import EvidenceRegistry
+from app.core.schemas.agent import AgentResult
 from app.core.schemas.case import CaseState, CaseStatus, DemoOptions
+from app.core.schemas.outputs import ReviewOutput
+
+
+@dataclass
+class RunJob:
+    """O que o Orchestrator está executando — é o que um retry retoma."""
+
+    kind: str  # "execution" | "human_adjustment"
+    round: int = 1
+    target_agent: str | None = None
+    comment: str = ""  # comentário do analista (UNTRUSTED no prompt)
 
 
 @dataclass
@@ -18,6 +30,15 @@ class CaseRecord:
     evidence: EvidenceRegistry = field(default_factory=EvidenceRegistry)
     answers: dict[str, Any] = field(default_factory=dict)  # respostas do usuário após scope congelado (UNTRUSTED)
     run_task: asyncio.Task[None] | None = field(default=None, repr=False)
+    # checkpoints da execução: um retry reaproveita o que já concluiu em vez de repetir chamadas ao LLM
+    job: RunJob | None = None
+    completed: dict[str, AgentResult] = field(default_factory=dict)  # "agent_id@R<n>" → resultado
+    reviews: dict[int, ReviewOutput] = field(default_factory=dict)  # rodada → review consolidado
+    results: dict[str, AgentResult] = field(default_factory=dict)  # último resultado de cada agente (base de ajustes)
+    first_round: dict[str, AgentResult] = field(default_factory=dict)
+    # params de rework que continuam valendo nas rodadas seguintes (ex.: baseline histórico do Risk)
+    sticky_params: dict[str, dict[str, Any]] = field(default_factory=dict)
+    human_adjustments: int = 0
 
     def touch(self) -> None:
         self.state.updated_at = datetime.now(timezone.utc)

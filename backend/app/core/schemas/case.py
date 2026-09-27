@@ -51,6 +51,8 @@ class InputRequest(BaseModel):
 class HumanReviewRequest(BaseModel):
     decision: str  # "approve_next_step" | "request_adjustment"
     comment: str = ""
+    # request_adjustment + target_agent: reabre esse agente (e dependentes) com o comentário; sem ele, só registra
+    target_agent: str | None = None
 
 
 class MissingInfoRequest(BaseModel):

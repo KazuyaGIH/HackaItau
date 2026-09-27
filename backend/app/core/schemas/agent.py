@@ -35,9 +35,14 @@ class AgentCard(BaseModel):
     model_role: Literal["default"] = "default"  # P0: um único modelo; P1: fast/strong
 
 
+# Ações de rework que não vêm de um finding do Review (remediations.py):
+HUMAN_ADJUSTMENT_ACTION = "human_adjustment"  # o analista pediu ajuste no human gate; `message` é o comentário dele
+CARRY_OVER_ACTION = "carry_over"  # só reaplica params de reworks anteriores (ex.: baseline histórico) numa nova rodada
+
+
 class ReworkInstruction(BaseModel):
     finding_ids: list[str]
-    required_action: str  # chave em review/remediations.py
+    required_action: str  # chave em review/remediations.py, ou uma das ações acima
     params: dict[str, Any] = Field(default_factory=dict)  # ex.: {"baseline_policy": "historical"}
     message: str  # texto do finding; entra no prompt como untrusted_data
 

@@ -1,126 +1,126 @@
-import { useState } from 'react'
+import { BookOpen, Calculator, FileText, Sparkles, TriangleAlert } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { usePanel } from '../panel'
+import { agentName } from '../squad'
 import type { EvidenceItem } from '../types'
 
-const KIND_CLASS: Record<string, string> = { SRC: 'src', KB: 'kb', CALC: 'calc', OUT: 'out' }
-
-interface ChipProps {
-  caseId: string
-  id: string
+const KIND: Record<string, { cls: string; Icon: typeof FileText; name: string }> = {
+  SRC: { cls: 'k-src', Icon: FileText, name: 'Registro de dados' },
+  KB: { cls: 'k-kb', Icon: BookOpen, name: 'Política interna' },
+  CALC: { cls: 'k-calc', Icon: Calculator, name: 'Cálculo' },
+  OUT: { cls: 'k-out', Icon: Sparkles, name: 'Resultado de agente' },
 }
 
-export function SourceChip({ caseId, id }: ChipProps) {
-  const [item, setItem] = useState<EvidenceItem | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [open, setOpen] = useState(false)
-  const prefix = id.split('-', 1)[0]
+const kindOf = (id: string) => KIND[id.split('-', 1)[0]] ?? KIND.SRC
 
-  const toggle = () => {
-    if (!open && !item && !error) {
-      api.evidence(caseId, id).then(setItem, (e: Error) => setError(e.message))
-    }
-    setOpen((o) => !o)
-  }
-
+// Referência a uma evidência. Abre o conteúdo no painel lateral.
+export function SourceChip({ id, label }: { id: string; label?: string }) {
+  const { openEvidence } = usePanel()
+  const { cls, Icon, name } = kindOf(id)
   return (
-    <>
-      <button type="button" className={`chip ${KIND_CLASS[prefix] ?? ''}`} onClick={toggle} title="Abrir evidência">
-        {id}
-      </button>
-      {open && (
-        <div className="modal-backdrop" onClick={() => setOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <header>
-              <strong>{id}</strong>
-              <button type="button" className="ghost" onClick={() => setOpen(false)}>
-                fechar
-              </button>
-            </header>
-            {error && <div className="banner warn">Evidência não encontrada no case: {error}</div>}
-            {item && <EvidenceBody item={item} />}
-          </div>
-        </div>
-      )}
-    </>
+    <button type="button" className={`chip ${cls}`} onClick={() => openEvidence(id)} title={`${name}: ${id}`}>
+      <Icon size={12} />
+      <span>{label ?? id}</span>
+    </button>
   )
 }
 
-function EvidenceBody({ item }: { item: EvidenceItem }) {
+export function Chips({ ids }: { ids: string[] }) {
+  if (!ids.length) return null
+  return (
+    <span className="chips">
+      {ids.map((id) => (
+        <SourceChip key={id} id={id} />
+      ))}
+    </span>
+  )
+}
+
+export function EvidenceView({ caseId, id }: { caseId: string; id: string }) {
+  const [item, setItem] = useState<EvidenceItem | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  // o painel remonta este componente por id (key), então o estado começa vazio a cada evidência
+  useEffect(() => {
+    let alive = true
+    api.evidence(caseId, id).then(
+      (x) => alive && setItem(x),
+      (e: Error) => alive && setError(e.message),
+    )
+    return () => {
+      alive = false
+    }
+  }, [caseId, id])
+
+  const { name } = kindOf(id)
+  if (error) {
+    return (
+      <div className="callout warn">
+        <TriangleAlert size={16} />
+        <p>Esta evidência não existe neste case ({error}).</p>
+      </div>
+    )
+  }
+  if (!item) return <p className="muted">Carregando {name.toLowerCase()}…</p>
+
   if (item.kind === 'calculation') {
     return (
-      <>
-        <p>
-          <b>Cálculo determinístico</b> · {item.name} · rodada {item.round} · por <code>{item.computed_by_agent}</code>
+      <div className="evidence">
+        <p className="evidence-kind">
+          Cálculo feito por código, rodada {item.round}, para {agentName(item.computed_by_agent)}
         </p>
+        <h3>{item.name}</h3>
         <pre className="formula">{item.formula}</pre>
-        <p>
-          <b>Entradas</b> (cada uma com a fonte de origem):
-        </p>
+        <h4>Entradas e origem de cada uma</h4>
         <table className="kv">
           <tbody>
             {Object.entries(item.inputs).map(([k, v]) => (
               <tr key={k}>
                 <td>{k}</td>
-                <td>{String(v)}</td>
-                <td className="muted">{item.input_sources[k] ?? ''}</td>
+                <td className="num">{String(v)}</td>
+                <td>{item.input_sources[k] && <SourceChip id={item.input_sources[k]} label="fonte" />}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p>
-          <b>Saídas</b>
-          {item.classification && (
-            <>
-              {' '}
-              · classificação <code>{item.classification}</code>
-            </>
-          )}
-        </p>
+        <h4>Saídas{item.classification ? `, classificação ${item.classification}` : ''}</h4>
         <pre>{JSON.stringify(item.outputs, null, 2)}</pre>
-      </>
+      </div>
     )
   }
   if (item.kind === 'agent_output') {
     return (
-      <>
-        <p>
-          <b>Output validado</b> de <code>{item.agent_id}</code> · rodada {item.round}
+      <div className="evidence">
+        <p className="evidence-kind">
+          Resultado validado de {agentName(item.agent_id)}, rodada {item.round}
         </p>
         <pre>{JSON.stringify(item.output, null, 2)}</pre>
-      </>
+      </div>
     )
   }
   return (
-    <>
-      <p>
-        <b>{item.kind === 'knowledge' ? 'Conhecimento interno' : 'Registro de dados'}</b> · {item.resource_domain}:
-        {item.resource_key} · acessado por <code>{item.accessed_by_agent}</code>
-        {item.mock && <span className="tag">fictício</span>}
+    <div className="evidence">
+      <p className="evidence-kind">
+        {item.kind === 'knowledge' ? 'Conhecimento interno' : 'Registro de dados'} acessado por{' '}
+        {agentName(item.accessed_by_agent)}
+        {item.mock && ', dado fictício'}
       </p>
-      <p className="muted">
-        Conteúdo tratado como <b>UNTRUSTED DATA</b> — usado como evidência, nunca como instrução.
-        {item.fields_hidden > 0 && <> {item.fields_hidden} campo(s) removido(s) pela field-level policy.</>}
+      {item.title && <h3>{item.title}</h3>}
+      <p className="muted small">
+        Tratado como dado não confiável: serve de evidência, nunca de instrução.
+        {item.fields_hidden > 0 && ` ${item.fields_hidden} campo(s) foram ocultados pela política de campos.`}
       </p>
       {item.flagged && (
-        <div className="banner danger">
-          Injection Guard: conteúdo suspeito
-          {item.out_of_scope_refs.length > 0 && <> · cita cliente(s) fora do escopo: {item.out_of_scope_refs.join(', ')}</>}
-          . Permissões não alteradas.
+        <div className="callout danger">
+          <TriangleAlert size={16} />
+          <p>
+            Conteúdo suspeito de prompt injection
+            {item.out_of_scope_refs.length > 0 && `, citando ${item.out_of_scope_refs.join(', ')} (fora do escopo)`}. As
+            permissões não mudaram.
+          </p>
         </div>
       )}
-      {item.title && <p>{item.title}</p>}
       <pre>{JSON.stringify(item.data, null, 2)}</pre>
-    </>
-  )
-}
-
-export function Chips({ caseId, ids }: { caseId: string; ids: string[] }) {
-  if (!ids.length) return null
-  return (
-    <span className="chips">
-      {ids.map((id) => (
-        <SourceChip key={id} caseId={caseId} id={id} />
-      ))}
-    </span>
+    </div>
   )
 }
