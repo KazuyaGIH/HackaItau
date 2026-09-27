@@ -1,7 +1,7 @@
 [project]
 name = "agent-squads-backend"
 version = "0.1.0"
-description = "Itaú-Native Agent Squads — MVP crédito agro (backend)"
+description = "Atena — squad de agentes para crédito agro (backend)"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",

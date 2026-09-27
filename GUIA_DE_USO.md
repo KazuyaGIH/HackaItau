@@ -1,8 +1,8 @@
-# Agent Squads — guia de funcionalidades e uso
+# Atena — guia de funcionalidades e uso
 
-O **Agent Squads** é uma aplicação demonstrativa para apoiar a análise inicial e a estruturação de crédito agro. O usuário descreve uma demanda em linguagem natural, acompanha o trabalho de quatro especialistas e recebe um relatório com riscos, cálculos, alternativas de operação e fontes consultáveis.
+A **Atena** é uma aplicação demonstrativa para apoiar a análise inicial e a estruturação de crédito agro. O usuário descreve uma demanda em linguagem natural, acompanha o trabalho de quatro especialistas e recebe um relatório com riscos, cálculos, alternativas de operação e fontes consultáveis.
 
-O projeto foi preparado para o Hackathon Itaú 2026. Clientes, documentos, produtos e políticas são fictícios. O resultado serve de apoio à avaliação humana: a aplicação não aprova crédito nem executa operações financeiras.
+Clientes, documentos, produtos e políticas são fictícios. O resultado serve de apoio à avaliação humana: a aplicação não aprova crédito nem executa operações financeiras.
 
 Este guia descreve o comportamento implementado no repositório, com foco em uso e demonstração.
 
@@ -254,7 +254,8 @@ A organização técnica pode ser resumida em três partes: uma interface React 
 
 | Onde consultar | Conteúdo |
 | --- | --- |
-| [README.md](README.md) | Objetivos, regras funcionais e escopo proposto para o MVP. |
+| [README.md](README.md) | Visão geral do projeto e primeiros passos. |
+| [ESPECIFICACAO.md](ESPECIFICACAO.md) | Objetivos, regras funcionais e escopo proposto para o MVP. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Descrição técnica detalhada. |
 | [TASKS.md](TASKS.md) | Decomposição de trabalho; as marcações não substituem a conferência do código implementado. |
 | [Makefile](Makefile) | Comandos de instalação, execução e verificação. |

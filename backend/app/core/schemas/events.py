@@ -76,7 +76,7 @@ class Event(BaseModel):
 
 
 class ToolEventPayload(BaseModel):
-    """Payload de PERMISSION_CHECKED / PERMISSION_DENIED / TOOL_CALLED (README §32)."""
+    """Payload de PERMISSION_CHECKED / PERMISSION_DENIED / TOOL_CALLED (ESPECIFICACAO §32)."""
 
     action: str
     resource_domain: str

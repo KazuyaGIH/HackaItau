@@ -1,7 +1,7 @@
 # ARCHITECTURE.md — Itaú-Native Agent Squads (MVP Crédito Agro)
 
 > **Status:** proposta de arquitetura, revisão 2, para aprovação. Nenhum código foi escrito.
-> **Fonte funcional:** `README.md` (fonte de verdade do produto). Este documento define a **menor arquitetura** capaz de implementar o README com segurança, governança e rastreabilidade, e de ser construída em paralelo por vários coding agents.
+> **Fonte funcional:** `ESPECIFICACAO.md` (fonte de verdade do produto). Este documento define a **menor arquitetura** capaz de implementar a especificação com segurança, governança e rastreabilidade, e de ser construída em paralelo por vários coding agents.
 >
 > Convenção: identificadores, nomes de tipos, eventos e arquivos em inglês; explicações em português.
 >
@@ -506,7 +506,7 @@ class Event(BaseModel):
 **EventType (congelado):**
 `CASE_CREATED, ORCHESTRATOR_STARTED, BOOTSTRAP_RESOLVED, MISSING_INFO_REQUESTED, INPUT_RECEIVED, SCOPE_FROZEN, AGENT_SELECTED, AGENT_STARTED, PERMISSION_CHECKED, PERMISSION_DENIED, SECURITY_EVENT, TOOL_CALLED, LLM_CALLED, GROUNDING_REJECTED, AGENT_COMPLETED, REVIEW_STARTED, REVIEW_ISSUE_FOUND, REVIEW_COMPLETED, TASK_REOPENED, RESULT_CONSOLIDATED, OUTPUT_GUARD_APPLIED, HUMAN_REVIEW_REQUIRED, HUMAN_APPROVED, HUMAN_ADJUSTMENT_REQUESTED, CASE_COMPLETED, EXECUTION_FAILED`
 
-Payload de `TOOL_CALLED`/`PERMISSION_CHECKED`/`PERMISSION_DENIED` segue o README §32: `{action, resource_domain, resource_key, allowed, reason, purpose, source_ids, fields_hidden, probe}`. `LLM_CALLED` carrega `{model, tokens_in, tokens_out, latency_ms, ok}` — isso é toda a "observabilidade" do P0; a UI mostra contagens simples (tool calls, fontes, eventos de segurança, tempo). Dashboard de tokens/custo é P1.
+Payload de `TOOL_CALLED`/`PERMISSION_CHECKED`/`PERMISSION_DENIED` segue o ESPECIFICACAO §32: `{action, resource_domain, resource_key, allowed, reason, purpose, source_ids, fields_hidden, probe}`. `LLM_CALLED` carrega `{model, tokens_in, tokens_out, latency_ms, ok}` — isso é toda a "observabilidade" do P0; a UI mostra contagens simples (tool calls, fontes, eventos de segurança, tempo). Dashboard de tokens/custo é P1.
 
 Persistência: em memória. Dump JSON de runs em disco é P1.
 
@@ -565,6 +565,7 @@ Polling a cada 1,5 s: `GET /api/cases/{id}` (estado + outputs + report) e `GET /
 ```text
 /
 ├─ README.md
+├─ ESPECIFICACAO.md
 ├─ ARCHITECTURE.md
 ├─ .env.example                     # LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, DEMO_MODE
 ├─ backend/
@@ -776,22 +777,22 @@ Nada aqui é implementado agora; todos os pontos são extensões que **não** ex
 
 ---
 
-## 23. Pontos em que este documento questiona o README
+## 23. Pontos em que este documento questiona a especificação
 
-1. **Paralelismo dos três especialistas (README §8, §40 passo 4, §52).** Structuring depende de Risk; Eligibility é gate. **Decisão:** pipeline sequencial com `depends_on` explícito. A UI mostra a squad inteira desde o início, com estados `aguardando/executando/concluído`. Plan template suporta steps independentes para o futuro.
-2. **Missing info duplicado (README §8 vs §10.1).** **Decisão:** o Orchestrator só trata falta de *identificação* (cliente não resolvido, valor ausente); completude documental/enquadramento é exclusivamente do Eligibility (gate).
-3. **"Selecionar agentes" dinâmico (README §9).** **Decisão:** seleção determinística por capability no registry a partir de um plan template; o LLM só classifica o intent.
-4. **Source IDs e audit timeline como P1 (README §61).** Os invariantes de segurança dependem deles. **Decisão:** P0.
-5. **Observabilidade/tokens (README §33–34).** Reduzido a campos em `LLM_CALLED`; contadores simples na UI. Dashboard é P1.
-6. **Human Gate "solicitar ajuste" reabre agente (README §8).** **Decisão:** o analista escolhe o agente (`target_agent`); ele e seus dependentes rodam numa nova rodada com o comentário como untrusted input, até 3 ajustes. Sem `target_agent`, só registra. O case nunca conclui sem `approve_next_step`.
-7. **Agent Card `human_gate_required_for` (README §13).** Documental no MVP (não há tools de ação). Mantido para extensão.
-8. **`DEMO_MODE` (README §47).** Só pré-carrega a demanda e habilita `demo_options`; não altera o provider de LLM (o LLM real continua obrigatório).
-9. **Estrutura de repositório (README §45).** `docker-compose.yml`, `services/telemetry.py`, múltiplos módulos de API e `docs/architecture.md` removidos/fundidos; Next.js trocado por Vite.
-10. **Permissões no payload de identidade (README §15).** **Decisão:** o request só carrega `user_id`; permissões vêm de `identities.json`.
-11. **`preferred_for_discussion` (README §10.3, §18 "Estrutura sugerida").** O README diz que é "apenas priorização operacional", mas qualquer marcação de preferida pelo sistema é uma recomendação implícita e conflita com "relatório neutro" e "decisão humana". **Decisão:** removido; 2–3 alternativas comparáveis lado a lado; o Human Gate mostra "alternativas para avaliação", não "estrutura sugerida".
-12. **Tools do Risk Agent no card (README §13) incluem `calculate_credit_metrics`/`run_stress_test`.** Mantido, mas quem invoca é o código do agente, não o LLM. O README §10.2 ("cálculos determinísticos devem ser feitos por código") é o que prevalece.
-13. **README §11 mostra os agentes chamando a Data/Search Layer.** Verdadeiro no P0 no sentido de que o *módulo* do agente chama o Gateway; o *LLM* do agente não chama nada. Tool-calling dinâmico fica para P1.
-14. **Deploy público como acceptance criterion #20 (README §53) e §46.** Continua sendo requisito do hackathon (entrega), mas **não** é critério para o MVP estar tecnicamente pronto. **Decisão:** P1, logo após o P0 fechar localmente.
+1. **Paralelismo dos três especialistas (ESPECIFICACAO §8, §40 passo 4, §52).** Structuring depende de Risk; Eligibility é gate. **Decisão:** pipeline sequencial com `depends_on` explícito. A UI mostra a squad inteira desde o início, com estados `aguardando/executando/concluído`. Plan template suporta steps independentes para o futuro.
+2. **Missing info duplicado (ESPECIFICACAO §8 vs §10.1).** **Decisão:** o Orchestrator só trata falta de *identificação* (cliente não resolvido, valor ausente); completude documental/enquadramento é exclusivamente do Eligibility (gate).
+3. **"Selecionar agentes" dinâmico (ESPECIFICACAO §9).** **Decisão:** seleção determinística por capability no registry a partir de um plan template; o LLM só classifica o intent.
+4. **Source IDs e audit timeline como P1 (ESPECIFICACAO §61).** Os invariantes de segurança dependem deles. **Decisão:** P0.
+5. **Observabilidade/tokens (ESPECIFICACAO §33–34).** Reduzido a campos em `LLM_CALLED`; contadores simples na UI. Dashboard é P1.
+6. **Human Gate "solicitar ajuste" reabre agente (ESPECIFICACAO §8).** **Decisão:** o analista escolhe o agente (`target_agent`); ele e seus dependentes rodam numa nova rodada com o comentário como untrusted input, até 3 ajustes. Sem `target_agent`, só registra. O case nunca conclui sem `approve_next_step`.
+7. **Agent Card `human_gate_required_for` (ESPECIFICACAO §13).** Documental no MVP (não há tools de ação). Mantido para extensão.
+8. **`DEMO_MODE` (ESPECIFICACAO §47).** Só pré-carrega a demanda e habilita `demo_options`; não altera o provider de LLM (o LLM real continua obrigatório).
+9. **Estrutura de repositório (ESPECIFICACAO §45).** `docker-compose.yml`, `services/telemetry.py`, múltiplos módulos de API e `docs/architecture.md` removidos/fundidos; Next.js trocado por Vite.
+10. **Permissões no payload de identidade (ESPECIFICACAO §15).** **Decisão:** o request só carrega `user_id`; permissões vêm de `identities.json`.
+11. **`preferred_for_discussion` (ESPECIFICACAO §10.3, §18 "Estrutura sugerida").** A especificação diz que é "apenas priorização operacional", mas qualquer marcação de preferida pelo sistema é uma recomendação implícita e conflita com "relatório neutro" e "decisão humana". **Decisão:** removido; 2–3 alternativas comparáveis lado a lado; o Human Gate mostra "alternativas para avaliação", não "estrutura sugerida".
+12. **Tools do Risk Agent no card (ESPECIFICACAO §13) incluem `calculate_credit_metrics`/`run_stress_test`.** Mantido, mas quem invoca é o código do agente, não o LLM. O ESPECIFICACAO §10.2 ("cálculos determinísticos devem ser feitos por código") é o que prevalece.
+13. **ESPECIFICACAO §11 mostra os agentes chamando a Data/Search Layer.** Verdadeiro no P0 no sentido de que o *módulo* do agente chama o Gateway; o *LLM* do agente não chama nada. Tool-calling dinâmico fica para P1.
+14. **Deploy público como acceptance criterion #20 (ESPECIFICACAO §53) e §46.** Continua sendo requisito do hackathon (entrega), mas **não** é critério para o MVP estar tecnicamente pronto. **Decisão:** P1, logo após o P0 fechar localmente.
 
 ---
 
@@ -825,7 +826,7 @@ O que **deliberadamente não** será construído no P0, por quê, e o que fica c
 | D22 | `get_historical_cases` / precedentes | não é necessário para a narrativa da demo | P1 |
 | D23 | Agent Registry UI (`GET /api/agents`) | os cards aparecem no SquadBoard de qualquer forma | P1 |
 | D24 | Tools de ação (enviar proposta, aprovar) | não existem por design | nunca sem human gate obrigatório |
-| D25 | Modo comparativo Generalist vs Squad (README §62) | só depois de medir | P2 |
+| D25 | Modo comparativo Generalist vs Squad (ESPECIFICACAO §62) | só depois de medir | P2 |
 
 **Invariantes que não foram simplificados (e onde vivem):** LLM propõe / backend autoriza / tool executa / audit registra / humano decide (§0, §5, §8); interseção `user ∩ agent ∩ case_scope ∩ purpose ∩ resource_policy` sem união (§7); `CaseScope` imutável e bootstrap estreito (§9); row/field filtering (§10); tool allowlist sem SQL/shell/browser/HTTP/filesystem (§8); retrieved content = untrusted data e injection não aumenta capabilities (§11); secrets fora do prompt (§7, §14, §21); evidence IDs validados (§12); cálculo material fora do LLM (§13); relatório neutro (§14, §16); decisão final humana (§3, §16).
 
