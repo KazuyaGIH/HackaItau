@@ -89,7 +89,6 @@ export function PerformanceView({ sidebarOpen, onOpenSidebar }: Props) {
       <AsciiField className="empty-field" />
       <div className="scroller">
         <div className="perf">
-          <BenchmarkPanel refresh={benchmarkRefresh} />
           {error && (
             <div className="callout danger">
               <TriangleAlert size={16} />
@@ -116,6 +115,7 @@ export function PerformanceView({ sidebarOpen, onOpenSidebar }: Props) {
               </div>
             )
           )}
+          <BenchmarkPanel refresh={benchmarkRefresh} />
         </div>
       </div>
     </main>
@@ -129,7 +129,7 @@ function Dashboard({ m }: { m: Metrics }) {
     <>
       <section className="perf-section">
         <h2>Uso nas conversas</h2>
-        <p className="muted small">Atividade deste servidor desde a inicialização, separada do comparativo acima.</p>
+        <p className="muted small">Atividade deste servidor desde a inicialização, separada do comparativo com o generalista, no fim da página.</p>
       </section>
 
       <div className="kpis">

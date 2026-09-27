@@ -225,6 +225,55 @@ body:has(.landing) { background: #fcf6ed; }
 .diagram .deny-label { font-family: var(--l-mono); font-size: 10px; font-weight: 500; }
 .pills.act .pill.deny rect { stroke-width: 1.4; }
 
+/* ---------------- comparativo: squad × generalista ---------------- */
+.cmp { max-width: 1160px; margin: 0 auto; padding: 72px clamp(20px, 5vw, 64px) 88px; display: flex; flex-direction: column; gap: 44px; }
+.cmp h2 { margin-top: 10px; font-family: var(--l-display); font-size: clamp(30px, 3.4vw, 44px); line-height: 1.08; font-weight: 560; letter-spacing: -0.02em; font-variation-settings: 'SOFT' 100, 'WONK' 0; text-wrap: balance; }
+.cmp-lede { margin-top: 16px; max-width: 64ch; font-size: 17px; line-height: 1.55; color: var(--l-ink-2); }
+.cmp h3 { font-size: 17px; font-weight: 600; }
+.cmp-note { font-size: 13px; line-height: 1.5; color: var(--l-ink-3); }
+.cmp-block { display: flex; flex-direction: column; gap: 10px; }
+
+.cmp-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(20px, 3vw, 40px); border-top: 1px solid var(--l-rule-2); padding-top: 26px; }
+.cmp-figure { display: flex; flex-direction: column; gap: 6px; }
+.cmp-big { font-family: var(--l-display); font-size: clamp(48px, 5.6vw, 72px); line-height: 1; font-weight: 580; letter-spacing: -0.03em; font-variation-settings: 'SOFT' 100, 'WONK' 0; color: var(--l-accent-text); font-variant-numeric: tabular-nums; }
+.cmp-big span { margin-left: 10px; font-size: 0.5em; color: var(--l-ink-3); letter-spacing: -0.01em; }
+.cmp-label { font-size: 17px; font-weight: 600; }
+.cmp-sub { font-size: 14px; line-height: 1.5; color: var(--l-ink-2); }
+
+.cmp-matrix { border: 1px solid var(--l-rule-2); border-radius: 14px; background: var(--l-surface); overflow: hidden; }
+.cmp-mrow { display: grid; grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--l-rule); }
+.cmp-mrow.head { border-top: 0; padding-block: 10px; font-family: var(--l-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: lowercase; color: var(--l-ink-3); }
+.cmp-model { font-size: 14.5px; font-weight: 600; }
+.cmp-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.cmp-cell.is-none { font-size: 12px; color: var(--l-ink-3); }
+.cmp-pips { display: flex; gap: 3px; }
+.cmp-pips i { width: 11px; height: 11px; border-radius: 3px; border: 1.2px solid var(--l-ink-3); }
+.cmp-cell.is-squad .cmp-pips i.on { background: var(--l-accent); border-color: var(--l-accent); }
+.cmp-cell.is-generalist .cmp-pips i.on { background: var(--l-ink-2); border-color: var(--l-ink-2); }
+.cmp-score { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.cmp-cell-sub { flex-basis: 100%; font-size: 11.5px; color: var(--l-ink-3); }
+
+.cmp-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cmp-chart { margin: 0; border: 1px solid var(--l-rule-2); border-radius: 14px; background: var(--l-surface); padding: 16px 18px; display: flex; flex-direction: column; gap: 9px; }
+.cmp-chart figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 4px; font-size: 15px; font-weight: 600; }
+.cmp-chart figcaption span { font-size: 11.5px; font-weight: 400; color: var(--l-ink-3); }
+.cmp-bar-row { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 1fr) 76px; gap: 10px; align-items: center; }
+.cmp-bar-label { font-size: 12.5px; color: var(--l-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp-bar-label b { font-weight: 600; color: var(--l-ok); }
+.cmp-bar-track { border-left: 1px solid var(--l-rule-2); padding: 3px 0; }
+.cmp-bar { display: block; height: 14px; border-radius: 0 4px 4px 0; }
+.cmp-bar.is-squad { background: var(--l-accent); }
+.cmp-bar.is-generalist { background: var(--l-ink-3); }
+.cmp-bar-value { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cmp-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11.5px; color: var(--l-ink-3); }
+.cmp-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.cmp-legend i { width: 10px; height: 10px; border-radius: 3px; }
+.cmp-legend i.is-squad { background: var(--l-accent); }
+.cmp-legend i.is-generalist { background: var(--l-ink-3); }
+
+.cmp-caveats { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; max-width: 78ch; font-size: 14.5px; line-height: 1.55; color: var(--l-ink-2); }
+.cmp-meta { margin-top: 6px; font-size: 11px; color: var(--l-ink-3); overflow-wrap: anywhere; }
+
 /* ---------------- rodapé ---------------- */
 .l-foot { border-top: 1px solid var(--l-rule); padding: 28px clamp(20px, 6vw, 88px) 40px; display: flex; flex-direction: column; gap: 10px; font-size: 12px; color: var(--l-ink-3); }
 .l-foot pre { margin: 0; padding: 0; max-height: none; background: none; border-radius: 0; font: inherit; color: var(--l-ink-2); white-space: pre-wrap; }
@@ -252,4 +301,15 @@ body:has(.landing) { background: #fcf6ed; }
   .how-steps { padding: 0 0 50svh; }
   .how-steps li { min-height: 55svh; opacity: 0; }
   .l-foot { padding: 24px 16px 32px; }
+
+  /* o diagrama fixo do "como funciona" passa até uma tela além da própria seção; o comparativo desliza por cima dele */
+  .cmp { padding: 48px 16px 64px; gap: 36px; background: var(--l-bg); }
+  .cmp-figures { grid-template-columns: 1fr; gap: 24px; }
+  .cmp-mrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 14px; padding: 12px 14px; }
+  .cmp-mrow.head > :first-child { display: none; }
+  .cmp-model { grid-column: 1 / -1; }
+  .cmp-pips i { width: 9px; height: 9px; }
+  .cmp-charts { grid-template-columns: 1fr; }
+  .cmp-bar-row { grid-template-columns: minmax(0, 1fr) 72px; }
+  .cmp-bar-label { grid-column: 1 / -1; }
 }

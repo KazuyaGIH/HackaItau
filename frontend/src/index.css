@@ -506,28 +506,18 @@ pre.formula { white-space: pre-wrap; word-break: break-word; color: var(--ink-2)
 .kpi-note { font-size: 12.5px; color: var(--ink-3); line-height: 1.4; }
 .perf-section { display: flex; flex-direction: column; gap: 10px; }
 .perf-section h2 { font-size: 17px; }
-.benchmark { gap: 16px; }
-.benchmark-hero { padding: 12px 0 6px; }
-.benchmark-hero .hero-figure { color: var(--ink); }
-.benchmark-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.benchmark-card { border: 1px solid var(--line); border-top: 3px solid var(--ink-3); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-.benchmark-card.squad { border-top-color: var(--ink); background: var(--fill); }
-.benchmark-card.medium { border-top-color: var(--warn); }
-.benchmark-card h3 { font-size: 16px; }
-.benchmark-score { font-size: 34px; font-weight: 600; line-height: 1.2; }
-.benchmark-score span { font-size: 16px; font-weight: 400; color: var(--ink-2); }
-.benchmark-verdict { font-size: 12.5px; color: var(--ink); }
-.benchmark-verdict.inferior { color: var(--warn); }
-.benchmark-stats { margin: auto 0 0; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
-.benchmark-stats > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; font-size: 13px; }
-.benchmark-stats dt { color: var(--ink-2); }
-.benchmark-stats dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-.benchmark-chart figcaption { display: flex; flex-direction: column; gap: 2px; }
-.benchmark-chart figcaption > span { font-size: 12px; font-weight: 400; color: var(--ink-3); }
-.benchmark-bar-row { display: grid; grid-template-columns: 100px minmax(0, 1fr) 84px; gap: 8px; align-items: center; }
-.benchmark-bar-row .bar-value { text-align: right; }
-.benchmark-bar-track { border-left: 1px solid var(--line); padding: 4px 0; }
-.bar.medium { background: var(--warn); }
+.bench-mini { margin-top: 8px; padding-top: 20px; border-top: 1px solid var(--line); }
+.bench-mini h2 { font-size: 15px; }
+.bench-mini-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.bench-mini-stat { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.bench-mini-label { font-size: 12.5px; color: var(--ink-3); }
+.bench-mini-stat dl { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.bench-mini-stat dl > div { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.bench-mini-stat dt { color: var(--ink-2); }
+.bench-mini-stat dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bench-mini-stat dl > div:first-child dd { color: var(--ink); }
+.bench-mini-stat dl > div:last-child dd { font-weight: 400; color: var(--ink-2); }
+.bench-mini-note { font-size: 12px; color: var(--ink-3); line-height: 1.4; }
 .legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .key { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
@@ -577,7 +567,7 @@ pre.formula { white-space: pre-wrap; word-break: break-word; color: var(--ink-2)
   .hero-figure { font-size: 40px; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .compare, .agent-cards { grid-template-columns: 1fr; }
-  .benchmark-cards { grid-template-columns: 1fr; }
+  .bench-mini-row { grid-template-columns: 1fr; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

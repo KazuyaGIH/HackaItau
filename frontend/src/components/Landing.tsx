@@ -1,4 +1,5 @@
-// Tela de entrada da demo: login (ID + senha fictícios) e, rolando, um diagrama de como a squad trabalha.
+// Tela de entrada da demo: login (ID + senha fictícios) e, rolando, um diagrama de como a squad trabalha
+// e o comparativo com um agente generalista.
 // A senha nunca sai deste componente: o ID é conferido contra as identidades fictícias do backend (GET, sem credenciais).
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api } from '../api'
@@ -6,6 +7,7 @@ import { ART, ART_CREDIT, PRODUCT } from '../brand'
 import '../landing.css'
 import type { Identity } from '../types'
 import { AsciiField } from './AsciiField'
+import { Comparison } from './Comparison'
 import { HowItWorks } from './HowItWorks'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -199,6 +201,8 @@ export function Landing({ onSignIn }: { onSignIn: SignIn }) {
       </section>
 
       <HowItWorks />
+
+      <Comparison />
 
       <footer className="l-foot mono">
         <pre aria-hidden="true">{'demanda ──▶ orquestrador ──▶ squad ──▶ revisor ──▶ humano'}</pre>
