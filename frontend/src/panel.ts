@@ -1,8 +1,11 @@
 // Painel lateral (à direita, como um "artifact"): relatório, auditoria ou uma evidência específica.
 import { createContext, useContext } from 'react'
 
+// âncoras das seções do relatório (o chat abre o painel direto nas opções, por exemplo)
+export const REPORT_SECTIONS = { options: 'relatorio-opcoes', capacity: 'relatorio-capacidade' } as const
+
 export type PanelView =
-  | { kind: 'report'; reportSeq: number | null }
+  | { kind: 'report'; reportSeq: number | null; section?: string }
   | { kind: 'audit' }
   | { kind: 'evidence'; id: string; back: PanelView | null }
 

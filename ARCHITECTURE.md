@@ -676,6 +676,10 @@ Congelar = merge de um PR "kernel" contendo **apenas** `core/schemas/*`, `llm/pr
    | `POST` | `/api/cases/{id}/input` | `{answers: dict}` → `CaseState` (só em `waiting_input`) |
    | `POST` | `/api/cases/{id}/human-review` | `{decision: approve_next_step \| request_adjustment, comment, target_agent?}` → `CaseState` (ajuste com `target_agent` reexecuta em background) |
    | `POST` | `/api/cases/{id}/retry` | → `202 CaseState` (só `failed`; retoma a partir do agente que falhou) |
+   | `POST` | `/api/cases/{id}/reply` | `{text}` → `CaseState` — resposta livre a um pedido de informação, ou contexto extra (prazo, garantias, observações) antes de rodar; vira `answers` UNTRUSTED |
+   | `POST` | `/api/cases/{id}/attachments` | `{user_id, filename, content_type, data_base64}` → `201 CaseState` — PDF/TXT/MD/CSV/JSON até 2 MB; vira documento do case (`ANX-*`), lido pelos agentes via `get_available_documents` (filtro de campos, Injection Guard, auditoria); um anexo do tipo que a Elegibilidade exigia destrava o case |
+   | `POST` | `/api/assist` | `{user_id, text, case_id?}` → `{kind, message, bullets, citations, suggestions}` — classifica a mensagem (demanda, resposta, ajuste, pergunta sobre o case, dúvida de política via KB, capacidades, fora do escopo); determinístico, sem LLM |
+   | `GET` | `/api/metrics` | desempenho por agente (acertos/erros, retrabalho, latência, tokens) e contexto da squad vs. um agente generalista estimado |
    | `GET` | `/api/health` | → `{ok, llm_mode, demo_mode}` |
    | `GET` | `/api/agents` | → `AgentCard[]` (**P1**) |
 10. **Contrato de rework:** `ReworkInstruction{finding_ids, required_action, params: dict, message}` e a tabela `remediations.py`.

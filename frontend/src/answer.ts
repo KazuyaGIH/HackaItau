@@ -80,3 +80,82 @@ export function adjustmentLines(prev: Report, next: Report): string[] {
   }
   return out
 }
+
+export interface KeyFigure {
+  label: string
+  value: string
+  note: string
+  tone: 'neutral' | 'warn' | 'danger' | 'ok'
+}
+
+const x = (v: number) => `${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`
+
+// Último cálculo de métricas de crédito (rodada mais recente) — de onde saem cobertura e alavancagem.
+export function latestMetrics(r: Report): Record<string, unknown> {
+  const calcs = r.calculations.filter((c) => c.name === 'credit_metrics')
+  return calcs.length ? calcs[calcs.length - 1].outputs : {}
+}
+
+// Os números que o analista precisa ver primeiro, com o limite da política ao lado.
+export function keyFigures(r: Report): KeyFigure[] {
+  const out: KeyFigure[] = []
+  const limits = r.policy_limits
+  const base = r.stress_scenarios.find((s) => Object.keys(s.shocks).length === 0)
+  if (base) {
+    const tone = base.classification === 'comfortable' ? 'ok' : base.classification === 'insufficient' ? 'danger' : 'warn'
+    out.push({
+      label: 'Cobertura no cenário base',
+      value: x(base.coverage),
+      note: `${CLASSIFICATION_LABEL[base.classification] ?? base.classification}${limits?.coverage_comfortable_min ? `; confortável a partir de ${x(limits.coverage_comfortable_min)}` : ''}`,
+      tone,
+    })
+  }
+  const stressed = r.stress_scenarios.filter((s) => Object.keys(s.shocks).length > 0)
+  if (stressed.length) {
+    const worst = stressed.reduce((a, b) => (b.coverage < a.coverage ? b : a))
+    out.push({
+      label: 'Pior cenário de estresse',
+      value: x(worst.coverage),
+      note: worst.label,
+      tone: worst.classification === 'insufficient' ? 'danger' : 'warn',
+    })
+  }
+  const m = latestMetrics(r)
+  if (typeof m.net_debt_ebitda === 'number') {
+    const max = limits?.net_debt_ebitda_max
+    out.push({
+      label: 'Dívida líquida / EBITDA',
+      value: x(m.net_debt_ebitda),
+      note: max ? `limite da política ${x(max)}` : 'dívida sobre geração de caixa operacional',
+      tone: max && m.net_debt_ebitda > max ? 'danger' : 'neutral',
+    })
+  }
+  const open = r.missing_data.length + r.uncertainties.length
+  out.push({
+    label: 'Pendências e incertezas',
+    value: String(open),
+    note: open ? 'listadas no relatório' : 'nenhuma registrada',
+    tone: open ? 'warn' : 'ok',
+  })
+  return out
+}
+
+// Destaques curtos que não cabem nos números: correções da revisão, o que um ajuste mudou, achados em aberto.
+export function highlights(r: Report, previous: Report | null): string[] {
+  const out = previous ? adjustmentLines(previous, r) : []
+  if (!previous) {
+    for (const a of r.assumptions.filter((y) => y.changed_in_rework)) {
+      out.push(
+        `O Revisor corrigiu uma premissa antes de você ver a análise: ${ASSUMPTION_LABEL[a.name] ?? a.name} de ${num(a.previous_value)} para ${num(a.value)}${a.unit ? ` ${a.unit}` : ''}.`,
+      )
+    }
+  }
+  const main = r.risk_factors.find((f) => f.severity === 'high')
+  if (main) out.push(`Principal risco: ${main.text.replace(/\.$/, '').toLowerCase()}.`)
+  if (r.review.open_count) {
+    out.push(
+      `${r.review.open_count} achado${r.review.open_count > 1 ? 's' : ''} da revisão continua${r.review.open_count > 1 ? 'm' : ''} aberto${r.review.open_count > 1 ? 's' : ''}.`,
+    )
+  }
+  return out
+}

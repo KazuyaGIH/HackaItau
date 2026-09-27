@@ -1,74 +1,143 @@
 import { ChevronDown } from 'lucide-react'
-import type { ReactNode } from 'react'
-import {
-  CLASSIFICATION_LABEL,
-  DOMAIN_LABEL,
-  ELIGIBILITY_LABEL,
-  REVIEW_STATUS_LABEL,
-  SEVERITY_ORDER,
-  brl,
-  num,
-  pct,
-} from '../format'
+import { useEffect, type ReactNode } from 'react'
+import { keyFigures } from '../answer'
+import { DOMAIN_LABEL, ELIGIBILITY_LABEL, REVIEW_STATUS_LABEL, SEVERITY_ORDER, num } from '../format'
+import { assumptionName, assumptionValue, coverageText, money, readableItem } from '../humanize'
 import { agentName } from '../squad'
-import type { Alternative, CaseState, Finding, Report, ReportItem } from '../types'
-import { Chips, SourceChip } from './SourceChip'
+import type { CaseState, Finding, Report, ReportItem } from '../types'
+import { CoverageChart } from './CoverageChart'
+import { REPORT_SECTIONS } from '../panel'
+import { OptionCards } from './Options'
+import { SourceChip, Sources } from './SourceChip'
 
 const NOT_APPROVAL = 'Não representa aprovação de crédito'
-
 const SEVERITY_LABEL: Record<string, string> = { high: 'alta', medium: 'média', low: 'baixa', info: 'informativo' }
 const FINDING_STATUS: Record<string, string> = { open: 'aberto', resolved: 'resolvido', informational: 'informativo' }
 
-// Relatório consolidado, exibido no painel lateral. Números vêm de cálculos por código; textos do modelo citam evidências.
-export function ReportView({ report, state }: { report: Report; state: CaseState | null }) {
+// Relatório consolidado como um documento: primeiro o que decidir, depois o porquê, os detalhes técnicos no fim.
+export function ReportView({ report, state, section }: { report: Report; state: CaseState | null; section?: string }) {
   const r = report
+  useEffect(() => {
+    if (section) document.getElementById(section)?.scrollIntoView({ block: 'start' })
+  }, [section])
+  const base = r.stress_scenarios.find((s) => Object.keys(s.shocks).length === 0)
+  const stressed = r.stress_scenarios.filter((s) => Object.keys(s.shocks).length > 0)
+  const weak = stressed.filter((s) => s.classification === 'insufficient' || s.classification === 'attention_required')
+  const it = state?.interpreted
+  const title = [r.summary.purpose ?? 'Crédito', r.summary.crop && `de ${r.summary.crop}`, it?.cycle].filter(Boolean).join(' ')
+
   return (
-    <article className="report">
-      <p className="report-disclaimer">
+    <article className="doc">
+      <p className="doc-disclaimer">
         {r.disclaimer.includes(NOT_APPROVAL)
           ? r.disclaimer
           : `Análise gerada para suporte à decisão. ${NOT_APPROVAL}. ${r.disclaimer}`}
       </p>
 
-      <dl className="report-summary">
-        <div>
-          <dt>Cliente</dt>
-          <dd>{r.client_id}</dd>
+      <header className="doc-head">
+        <h2>
+          {title.charAt(0).toUpperCase() + title.slice(1)}, {it?.client_ref ?? r.client_id}
+        </h2>
+        <p className="doc-lede">
+          {money(r.summary.requested_amount ?? 0)} solicitados. A Elegibilidade concluiu{' '}
+          <strong>{ELIGIBILITY_LABEL[r.summary.eligibility_status] ?? r.summary.eligibility_status}</strong>.
+          {base &&
+            ` No cenário base, a geração de caixa cobre ${coverageText(base.coverage)} o valor pedido`}
+          {base && r.policy_limits?.coverage_comfortable_min
+            ? `, ${base.coverage >= r.policy_limits.coverage_comfortable_min ? 'acima' : 'abaixo'} do nível confortável da política (${coverageText(r.policy_limits.coverage_comfortable_min)})`
+            : ''}
+          {base && '.'}
+          {stressed.length > 0 &&
+            (weak.length
+              ? ` Em ${weak.length} de ${stressed.length} cenários de estresse a cobertura fica abaixo do exigido.`
+              : ' Nos cenários de estresse a cobertura se mantém dentro da política.')}{' '}
+          A squad propôs {r.alternatives.length} opções de estrutura, sem preferência do sistema.
+        </p>
+        <div className="doc-figures">
+          {keyFigures(r).map((f) => (
+            <div key={f.label} className={`figure ${f.tone}`}>
+              <span className="figure-label">{f.label}</span>
+              <span className="figure-value">{f.value}</span>
+              <span className="figure-note">{f.note}</span>
+            </div>
+          ))}
         </div>
-        <div>
-          <dt>Valor solicitado</dt>
-          <dd className="num">{brl(r.summary.requested_amount)}</dd>
-        </div>
-        <div>
-          <dt>Finalidade</dt>
-          <dd>
-            {r.summary.purpose ?? '—'}, {r.summary.crop ?? '—'}
-          </dd>
-        </div>
-        <div>
-          <dt>Elegibilidade</dt>
-          <dd>{ELIGIBILITY_LABEL[r.summary.eligibility_status] ?? r.summary.eligibility_status}</dd>
-        </div>
-        <div>
-          <dt>Alternativas</dt>
-          <dd className="num">{r.summary.alternatives_count}</dd>
-        </div>
-        <div>
-          <dt>Retrabalho</dt>
-          <dd className="num">{r.summary.rework_rounds}</dd>
-        </div>
-      </dl>
+      </header>
 
-      <Fold title="Capacidade de pagamento e estresse" origin="code" open>
-        <StressTable report={r} />
-        <Fold title={`Fórmulas e entradas (${r.calculations.length} cálculos)`} inner>
+      <Section id={REPORT_SECTIONS.capacity} title="Capacidade de pagamento" origin="code">
+        <CoverageChart report={r} />
+      </Section>
+
+      <Section id={REPORT_SECTIONS.options} title="Opções de estrutura">
+        <p className="doc-note">
+          Mesmos campos, na mesma ordem, para comparar. A escolha é do analista; o sistema não ranqueia as opções.
+        </p>
+        <OptionCards alternatives={r.alternatives} />
+      </Section>
+
+      <Section title="Riscos e pontos a favor" origin="llm">
+        <ItemList title="Riscos" items={r.risk_factors} withSeverity />
+        <ItemList title="Pontos a favor" items={r.favorable_factors} />
+      </Section>
+
+      <Section title="Premissas usadas nos cálculos" origin="code">
+        <table className="table plain-table">
+          <tbody>
+            {r.assumptions
+              .filter((a) => a.origin === 'code')
+              .map((a) => (
+                <tr key={a.name} className={a.changed_in_rework ? 'changed' : ''}>
+                  <th>{assumptionName(a.name)}</th>
+                  <td>
+                    {assumptionValue(a.value, a.unit)}
+                    {a.changed_in_rework && (
+                      <span className="was">
+                        corrigida pela revisão; antes {assumptionValue(a.previous_value, a.unit)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="small">{a.source_id && <SourceChip id={a.source_id} label="fonte" />}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+        {r.assumptions.some((a) => a.origin !== 'code') && (
+          <ItemList
+            title="Observações qualitativas do modelo (não entram nas contas)"
+            items={r.assumptions
+              .filter((a) => a.origin !== 'code')
+              .map((a) => ({ text: String(a.value), evidence_ids: [], severity: null, code: a.name }))}
+          />
+        )}
+      </Section>
+
+      <Section title={`Pendências e incertezas (${r.missing_data.length + r.uncertainties.length})`}>
+        {r.missing_data.length + r.uncertainties.length === 0 ? (
+          <p className="doc-note">Nenhuma registrada.</p>
+        ) : (
+          <>
+            <ItemList title="Dados que faltam" items={r.missing_data} hideEmpty />
+            <ItemList title="Incertezas" items={r.uncertainties} hideEmpty />
+          </>
+        )}
+      </Section>
+
+      <Section title="O que a revisão encontrou">
+        <p className="doc-note">
+          {capitalize(REVIEW_STATUS_LABEL[r.review.review_status] ?? r.review.review_status)}, com{' '}
+          {r.review.resolved_count} achado(s) resolvido(s) pelo retrabalho e {r.review.open_count} em aberto.
+          {r.review.overall_assessment && ` ${r.review.overall_assessment}`}
+        </p>
+        <Findings findings={r.review.findings} />
+      </Section>
+
+      <div className="doc-details">
+        <Fold title={`Fórmulas e entradas dos cálculos (${r.calculations.length})`}>
           <div className="calcs">
             {r.calculations.map((c) => (
               <div key={c.calculation_id} className="calc">
                 <div className="calc-head">
                   <SourceChip id={c.calculation_id} />
-                  <strong>{c.name}</strong>
-                  {c.classification && <span className="tag">{CLASSIFICATION_LABEL[c.classification] ?? c.classification}</span>}
                 </div>
                 <pre className="formula">{c.formula}</pre>
                 <table className="kv">
@@ -77,239 +146,123 @@ export function ReportView({ report, state }: { report: Report; state: CaseState
                       .filter(([, v]) => typeof v !== 'object' || v === null)
                       .map(([k, v]) => (
                         <tr key={k}>
-                          <td>{k}</td>
+                          <td>{k.replace(/_/g, ' ')}</td>
                           <td className="num">{num(v, 4)}</td>
                         </tr>
                       ))}
                   </tbody>
                 </table>
-                <p className="muted small">
-                  Limites da política: <Chips ids={c.thresholds_source_ids} />
-                </p>
               </div>
             ))}
           </div>
         </Fold>
-      </Fold>
-
-      <Fold title="Riscos e fatores favoráveis" origin="llm" open>
-        <Items title="Fatores de risco" items={r.risk_factors} />
-        <Items title="Fatores favoráveis" items={r.favorable_factors} />
-      </Fold>
-
-      <Fold title="Estruturas alternativas" open>
-        <p className="muted small">Comparáveis, sem preferência do sistema. A escolha é do analista.</p>
-        <AlternativesTable alternatives={r.alternatives} />
-      </Fold>
-
-      <Fold title={`Pendências e incertezas (${r.missing_data.length + r.uncertainties.length})`}>
-        <Items title="Dados ausentes" items={r.missing_data} />
-        <Items title="Incertezas" items={r.uncertainties} />
-      </Fold>
-
-      <Fold title="Fatos e premissas">
-        <Items title="Fatos" items={r.facts} />
-        <h4>Premissas</h4>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Premissa</th>
-              <th>Valor</th>
-              <th>Origem</th>
-              <th>Justificativa</th>
-            </tr>
-          </thead>
-          <tbody>
-            {r.assumptions.map((a) => (
-              <tr key={a.name} className={a.changed_in_rework ? 'changed' : ''}>
-                <td>
-                  {a.name} {a.source_id && <SourceChip id={a.source_id} label="fonte" />}
-                </td>
-                <td className="num">
-                  {num(a.value)} {a.unit ?? ''}
-                  {a.changed_in_rework && <span className="was">antes {num(a.previous_value)}</span>}
-                </td>
-                <td>{a.origin === 'code' ? 'código' : 'modelo (qualitativa)'}</td>
-                <td className="small">{a.justification}</td>
-              </tr>
+        <Fold title="Contribuição da squad">
+          <SquadContribution report={r} state={state} />
+        </Fold>
+        <Fold title={`Todas as fontes (${r.sources.length})`}>
+          <ul className="sources">
+            {r.sources.map((s) => (
+              <li key={s.id}>
+                <SourceChip id={s.id} />
+                <span className="small">{s.label}</span>
+                {s.agent_id && <span className="muted small">{agentName(s.agent_id)}</span>}
+              </li>
             ))}
-          </tbody>
-        </table>
-      </Fold>
-
-      <Fold
-        title={`Revisão: ${REVIEW_STATUS_LABEL[r.review.review_status] ?? r.review.review_status}, ${r.review.open_count} aberto(s), ${r.review.resolved_count} resolvido(s)`}
-      >
-        {r.review.overall_assessment && <p className="small">{r.review.overall_assessment}</p>}
-        <Findings findings={r.review.findings} />
-      </Fold>
-
-      <Fold title="Contribuição da squad">
-        <SquadContribution report={r} state={state} />
-      </Fold>
-
-      <Fold title={`Fontes (${r.sources.length})`}>
-        <ul className="sources">
-          {r.sources.map((s) => (
-            <li key={s.id}>
-              <SourceChip id={s.id} />
-              <span className="small">{s.label}</span>
-              {s.agent_id && <span className="muted small">{agentName(s.agent_id)}</span>}
-            </li>
-          ))}
-        </ul>
-      </Fold>
+          </ul>
+        </Fold>
+      </div>
     </article>
   )
 }
 
-function Fold({
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+function Section({
+  id,
   title,
   origin,
-  open,
-  inner,
   children,
 }: {
+  id?: string
   title: string
   origin?: 'code' | 'llm'
-  open?: boolean
-  inner?: boolean
   children: ReactNode
 }) {
   return (
-    <details className={`fold${inner ? ' inner' : ''}`} open={open}>
+    <section className="doc-section" id={id}>
+      <h3>
+        {title}
+        {origin === 'code' && <span className="origin code">calculado por código</span>}
+        {origin === 'llm' && <span className="origin llm">escrito pelo modelo, com fontes</span>}
+      </h3>
+      {children}
+    </section>
+  )
+}
+
+function Fold({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details className="fold">
       <summary>
         <ChevronDown size={16} className="chev" />
         <span>{title}</span>
-        {origin === 'code' && <span className="origin code">calculado por código</span>}
-        {origin === 'llm' && <span className="origin llm">texto do modelo, com evidências</span>}
       </summary>
       <div className="fold-body">{children}</div>
     </details>
   )
 }
 
-function StressTable({ report }: { report: Report }) {
+function ItemList({
+  title,
+  items,
+  withSeverity,
+  hideEmpty,
+}: {
+  title: string
+  items: ReportItem[]
+  withSeverity?: boolean
+  hideEmpty?: boolean
+}) {
+  if (!items.length && hideEmpty) return null
+  const sorted = withSeverity
+    ? [...items].sort((a, b) => SEVERITY_ORDER[a.severity ?? 'info'] - SEVERITY_ORDER[b.severity ?? 'info'])
+    : items
   return (
-    <table className="table">
-      <thead>
-        <tr>
-          <th>Cenário</th>
-          <th>Geração de caixa</th>
-          <th>Cobertura</th>
-          <th>Classificação</th>
-        </tr>
-      </thead>
-      <tbody>
-        {report.stress_scenarios.map((s) => (
-          <tr key={s.scenario_id}>
-            <td>
-              {s.label}
-              <div className="muted small">
-                {Object.entries(s.shocks)
-                  .map(([k, v]) => `${k} ${pct(v)}`)
-                  .join(', ') || 'sem choque'}
-              </div>
-            </td>
-            <td className="num">{brl(s.expected_cash_generation)}</td>
-            <td className="num strong">{num(s.coverage, 2)}x</td>
-            <td>
-              <span className={`tag ${s.classification}`}>{CLASSIFICATION_LABEL[s.classification] ?? s.classification}</span>
-              <SourceChip id={s.calculation_id} label="cálculo" />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-function Items({ title, items }: { title: string; items: ReportItem[] }) {
-  return (
-    <>
+    <div className="item-list">
       <h4>{title}</h4>
       {items.length === 0 ? (
-        <p className="muted small">Nenhum item.</p>
+        <p className="doc-note">Nenhum.</p>
       ) : (
-        <ul className="items">
-          {items.map((it, i) => (
+        <ul>
+          {sorted.map((it, i) => (
             <li key={`${it.code ?? ''}-${i}`}>
-              {it.severity && <span className={`tag ${it.severity}`}>{SEVERITY_LABEL[it.severity]}</span>} {it.text}{' '}
-              <Chips ids={it.evidence_ids} />
+              {withSeverity && it.severity && <span className={`tag ${it.severity}`}>{SEVERITY_LABEL[it.severity]}</span>}
+              <span>{readableItem(it.text)}</span>
+              <Sources ids={it.evidence_ids} />
             </li>
           ))}
         </ul>
       )}
-    </>
-  )
-}
-
-const ALT_ROWS: Array<[string, (a: Alternative) => ReactNode]> = [
-  ['Produto', (a) => a.product_id],
-  ['Valor', (a) => brl(a.amount)],
-  ['Prazo', (a) => `${a.tenor_months} meses`],
-  ['Amortização', (a) => a.amortization],
-  ['Garantias', (a) => a.guarantees.join(', ')],
-  ['Condicionantes', (a) => a.conditions.join(', ') || '—'],
-  ['Racional', (a) => a.rationale],
-  ['Quando faz sentido', (a) => a.when_it_fits],
-  ['Vantagens', (a) => <Plain items={a.advantages} />],
-  ['Riscos', (a) => <Plain items={a.risks} />],
-  ['Trade-offs', (a) => <Plain items={a.trade_offs} />],
-  ['Evidências', (a) => <Chips ids={a.evidence_ids} />],
-]
-
-function Plain({ items }: { items: string[] }) {
-  return (
-    <ul className="plain">
-      {items.map((s) => (
-        <li key={s}>{s}</li>
-      ))}
-    </ul>
-  )
-}
-
-function AlternativesTable({ alternatives }: { alternatives: Alternative[] }) {
-  return (
-    <div className="table-scroll">
-      <table className="table alternatives">
-        <thead>
-          <tr>
-            <th />
-            {alternatives.map((a) => (
-              <th key={a.id}>{a.name}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {ALT_ROWS.map(([label, render]) => (
-            <tr key={label}>
-              <th>{label}</th>
-              {alternatives.map((a) => (
-                <td key={a.id}>{render(a)}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   )
 }
 
 function Findings({ findings }: { findings: Finding[] }) {
   const sorted = [...findings].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
-  if (!sorted.length) return <p className="muted small">Nenhum achado.</p>
+  if (!sorted.length) return null
   return (
     <ul className="findings">
       {sorted.map((f) => (
         <li key={f.id} className={f.status}>
           <div className="finding-head">
             <span className={`tag ${f.severity}`}>{SEVERITY_LABEL[f.severity]}</span>
-            <span className={`tag status-${f.status}`}>{FINDING_STATUS[f.status] ?? f.status}</span>
+            {f.status !== 'informational' && (
+              <span className={`tag status-${f.status}`}>{FINDING_STATUS[f.status] ?? f.status}</span>
+            )}
             {f.owner_agent && <span className="muted small">responsável: {agentName(f.owner_agent)}</span>}
           </div>
-          <p className="small">{f.message}</p>
-          <Chips ids={f.evidence_ids} />
+          <p>{f.message.replace(/`/g, '')}</p>
+          <Sources ids={f.evidence_ids} />
         </li>
       ))}
     </ul>
@@ -327,7 +280,7 @@ function SquadContribution({ report, state }: { report: Report; state: CaseState
           <th>Rodadas</th>
           <th>Acessos</th>
           <th>Negados</th>
-          <th>Domínios</th>
+          <th>Dados que leu</th>
           <th>Achados</th>
         </tr>
       </thead>

@@ -1,6 +1,8 @@
-import { ChevronLeft, ChevronRight, CircleCheck, Copy, CornerUpLeft, Pencil } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CircleCheck, Copy, CornerUpLeft, FileText, Paperclip, Pencil, ShieldAlert } from 'lucide-react'
 import { useState } from 'react'
+import { DOC_LABEL } from '../squad'
 import type { Turn } from '../transcript'
+import type { AttachmentView } from '../types'
 
 interface Branching {
   index: number
@@ -53,6 +55,14 @@ export function UserMessage({ turn, animate, branching }: Props) {
     )
   }
 
+  if (turn.role === 'attachment') {
+    return (
+      <div className={`turn user attachment${animate ? ' appear' : ''}`}>
+        <FileCard name={turn.text} a={turn.attachment} />
+      </div>
+    )
+  }
+
   const icon =
     turn.role === 'approve' ? <CircleCheck size={15} /> : turn.role === 'adjust' ? <CornerUpLeft size={15} /> : null
 
@@ -62,6 +72,19 @@ export function UserMessage({ turn, animate, branching }: Props) {
         <div className="user-detail">
           {icon}
           <span>{turn.detail}</span>
+        </div>
+      )}
+      {turn.attachments?.map((a) => (
+        <FileCard key={a.doc_id} name={a.filename} a={a} />
+      ))}
+      {turn.files && turn.files.length > 0 && (
+        <div className="bubble-files">
+          {turn.files.map((f) => (
+            <span key={f} className="file-chip">
+              <Paperclip size={13} />
+              {f}
+            </span>
+          ))}
         </div>
       )}
       {turn.text && <div className="bubble">{turn.text}</div>}
@@ -117,6 +140,30 @@ export function UserMessage({ turn, animate, branching }: Props) {
             </span>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+// Documento anexado: nome, tipo reconhecido e se o Injection Guard encontrou instruções embutidas.
+function FileCard({ name, a }: { name: string; a?: AttachmentView }) {
+  return (
+    <div className={`file-card${a?.flagged ? ' flagged' : ''}`}>
+      <span className="file-icon">
+        <FileText size={18} />
+      </span>
+      <span className="file-text">
+        <strong>{name}</strong>
+        <span>
+          {a ? `${DOC_LABEL[a.doc_type] ?? a.doc_type}, ${a.chars.toLocaleString('pt-BR')} caracteres lidos` : 'anexo'}
+          {a?.truncated && ', cortado no limite'}
+        </span>
+      </span>
+      {a?.flagged && (
+        <span className="file-flag" title="O documento traz instruções para os agentes; ele é tratado só como dado.">
+          <ShieldAlert size={14} />
+          instruções suspeitas
+        </span>
       )}
     </div>
   )

@@ -1,32 +1,43 @@
-import { ArrowUp, Check, ChevronDown, LoaderCircle, ShieldAlert } from 'lucide-react'
+import { ArrowUp, Check, ChevronDown, FileText, LoaderCircle, Paperclip, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ADJUSTABLE, ELIGIBILITY, RISK, STRUCTURING, agentName } from '../squad'
+import { ACCEPTED_FILES, MAX_FILE_BYTES, type SendOptions } from '../workspace'
 
-export type ComposerMode = 'new' | 'chat' | 'adjust' | 'working' | 'locked'
+// new: primeira mensagem; chat: pergunta livre; reply: resposta ou contexto para o case; adjust: ajuste à squad
+export type ComposerMode = 'new' | 'chat' | 'reply' | 'adjust' | 'working' | 'locked'
 
 interface Props {
   mode: ComposerMode
   placeholder: string
-  onSend: (text: string, opts: { adversarial: boolean; target: string }) => void
+  onSend: (text: string, opts: SendOptions) => void
   autoFocus?: boolean
+  canAttach?: boolean
 }
 
 // Sugere o agente a reabrir pelo assunto do ajuste; o analista pode trocar antes de enviar.
-function guessTarget(text: string): string {
+function guessTarget(text: string, hasFiles: boolean): string {
+  if (hasFiles || /document|enquadr|elegib|cadastr|certid|matr[ií]cula|arrendamento/i.test(text)) return ELIGIBILITY
   if (/produtiv|risco|estresse|cen[aá]rio|pre[cç]o|mitig|alavanc|cobertura/i.test(text)) return RISK
-  if (/document|enquadr|elegib|cadastr|certid/i.test(text)) return ELIGIBILITY
   return STRUCTURING
 }
 
-export function Composer({ mode, placeholder, onSend, autoFocus }: Props) {
+const size = (bytes: number) =>
+  bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`
+
+export function Composer({ mode, placeholder, onSend, autoFocus, canAttach = true }: Props) {
   const [text, setText] = useState('')
-  const [adversarial, setAdversarial] = useState(false)
+  const [files, setFiles] = useState<File[]>([])
+  const [fileError, setFileError] = useState<string | null>(null)
   const [manualTarget, setManualTarget] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const area = useRef<HTMLTextAreaElement>(null)
+  const picker = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const target = manualTarget ?? guessTarget(text)
+  const target = manualTarget ?? guessTarget(text, files.length > 0)
   const disabled = mode === 'working' || mode === 'locked'
+  const attachable = canAttach && !disabled
+  // sem case aberto, anexo sozinho não basta: é preciso descrever a operação
+  const canSend = !disabled && (text.trim().length > 0 || (files.length > 0 && mode !== 'new'))
 
   // altura acompanha o texto (até um limite), como nos chats
   useEffect(() => {
@@ -50,11 +61,26 @@ export function Composer({ mode, placeholder, onSend, autoFocus }: Props) {
     }
   }, [menuOpen])
 
+  const addFiles = (list: FileList | null) => {
+    if (!list) return
+    const accepted: File[] = []
+    const problems: string[] = []
+    for (const f of Array.from(list)) {
+      const ok = ACCEPTED_FILES.split(',').some((ext) => f.name.toLowerCase().endsWith(ext))
+      if (!ok) problems.push(`${f.name}: use PDF, TXT, MD, CSV ou JSON`)
+      else if (f.size > MAX_FILE_BYTES) problems.push(`${f.name}: maior que 2 MB`)
+      else accepted.push(f)
+    }
+    setFileError(problems.length ? problems.join('; ') : null)
+    setFiles((prev) => [...prev, ...accepted].slice(0, 5))
+  }
+
   const send = () => {
-    const t = text.trim()
-    if (!t || disabled) return
-    onSend(t, { adversarial, target })
+    if (!canSend) return
+    onSend(text.trim(), { target, files })
     setText('')
+    setFiles([])
+    setFileError(null)
     setManualTarget(null)
   }
 
@@ -65,7 +91,32 @@ export function Composer({ mode, placeholder, onSend, autoFocus }: Props) {
         e.preventDefault()
         send()
       }}
+      onDragOver={(e) => attachable && e.preventDefault()}
+      onDrop={(e) => {
+        if (!attachable) return
+        e.preventDefault()
+        addFiles(e.dataTransfer.files)
+      }}
     >
+      {files.length > 0 && (
+        <div className="composer-files">
+          {files.map((f, i) => (
+            <span key={`${f.name}-${i}`} className="file-chip">
+              <FileText size={14} />
+              <span className="file-chip-name">{f.name}</span>
+              <span className="muted">{size(f.size)}</span>
+              <button
+                type="button"
+                aria-label={`Remover ${f.name}`}
+                onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+              >
+                <X size={13} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {fileError && <p className="composer-error">{fileError}</p>}
       <textarea
         ref={area}
         rows={1}
@@ -84,17 +135,30 @@ export function Composer({ mode, placeholder, onSend, autoFocus }: Props) {
       />
       <div className="composer-bar">
         <div className="composer-tools">
-          {mode === 'new' && (
-            <button
-              type="button"
-              className={`pill${adversarial ? ' on' : ''}`}
-              aria-pressed={adversarial}
-              onClick={() => setAdversarial(!adversarial)}
-              title="Inclui um documento com prompt injection pedindo dados de outro cliente"
-            >
-              <ShieldAlert size={15} />
-              Teste de segurança
-            </button>
+          {canAttach && (
+            <>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Anexar documento"
+                title="Anexar documento (PDF, TXT, MD, CSV ou JSON, até 2 MB)"
+                disabled={!attachable}
+                onClick={() => picker.current?.click()}
+              >
+                <Paperclip size={17} />
+              </button>
+              <input
+                ref={picker}
+                type="file"
+                accept={ACCEPTED_FILES}
+                multiple
+                hidden
+                onChange={(e) => {
+                  addFiles(e.target.files)
+                  e.target.value = ''
+                }}
+              />
+            </>
           )}
           {mode === 'adjust' && (
             <div className="target" ref={menuRef}>
@@ -104,13 +168,14 @@ export function Composer({ mode, placeholder, onSend, autoFocus }: Props) {
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen(!menuOpen)}
+                title="Se a mensagem for um ajuste, este agente refaz o trabalho"
               >
-                Reabrir {agentName(target)}
+                Ajuste vai para {agentName(target)}
                 <ChevronDown size={14} />
               </button>
               {menuOpen && (
                 <div className="menu" role="menu">
-                  <p className="menu-title">Qual agente deve refazer o trabalho?</p>
+                  <p className="menu-title">Se for um ajuste, qual agente deve refazer o trabalho?</p>
                   {ADJUSTABLE.map((a) => (
                     <button
                       key={a.id}
@@ -130,13 +195,16 @@ export function Composer({ mode, placeholder, onSend, autoFocus }: Props) {
                       {target === a.id && <Check size={15} />}
                     </button>
                   ))}
-                  <p className="menu-foot muted small">Quem depende dele roda de novo, e o Revisor confere no final.</p>
+                  <p className="menu-foot muted small">
+                    Quem depende dele roda de novo, e o Revisor confere no final. Perguntas são respondidas sem rodar a
+                    squad.
+                  </p>
                 </div>
               )}
             </div>
           )}
         </div>
-        <button type="submit" className="send" disabled={disabled || !text.trim()} aria-label="Enviar">
+        <button type="submit" className="send" disabled={!canSend} aria-label="Enviar">
           {mode === 'working' ? <LoaderCircle size={18} className="spin" /> : <ArrowUp size={18} />}
         </button>
       </div>

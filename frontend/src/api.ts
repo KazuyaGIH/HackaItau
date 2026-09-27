@@ -1,4 +1,5 @@
 import type {
+  AssistReply,
   CaseEvent,
   CaseState,
   CreateCaseRequest,
@@ -6,6 +7,7 @@ import type {
   HealthResponse,
   HumanReviewRequest,
   InputRequest,
+  Metrics,
   Report,
 } from './types'
 
@@ -49,6 +51,12 @@ export const api = {
   provideInput: (id: string, body: InputRequest) => post(`/api/cases/${id}/input`, body).then(json<CaseState>),
   run: (id: string) => post(`/api/cases/${id}/run`, {}).then(json<CaseState>),
   retry: (id: string) => post(`/api/cases/${id}/retry`, {}).then(json<CaseState>),
+  reply: (id: string, text: string) => post(`/api/cases/${id}/reply`, { text }).then(json<CaseState>),
+  attach: (id: string, body: { user_id: string; filename: string; content_type: string; data_base64: string }) =>
+    post(`/api/cases/${id}/attachments`, body).then(json<CaseState>),
+  assist: (body: { user_id: string; text: string; case_id?: string | null }) =>
+    post('/api/assist', body).then(json<AssistReply>),
+  metrics: () => fetch('/api/metrics').then(json<Metrics>),
   report: (id: string) => fetch(`/api/cases/${id}/report`).then(json<Report>),
   evidence: (id: string, evidenceId: string) =>
     fetch(`/api/cases/${id}/evidence/${encodeURIComponent(evidenceId)}`).then(json<EvidenceItem>),

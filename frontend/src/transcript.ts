@@ -1,7 +1,7 @@
 // Constrói a conversa a partir do Event Log do case. Função pura: mesmo (state, events, local) → mesma conversa.
 // O Orquestrador é a única voz. Cada execução da squad vira um bloco de atividade dentro da resposta dele.
 import { SECURITY_LABEL, agentName, deniedTarget, denyReason, stepOf, type Step, type Tone } from './squad'
-import type { CaseEvent, CaseState } from './types'
+import type { AssistReply, AttachmentView, CaseEvent, CaseState } from './types'
 
 export type NoticeKind = 'scope' | 'denied' | 'injection' | 'guard' | 'security'
 
@@ -53,17 +53,30 @@ export interface ActivityBlock {
 
 export type Part =
   | { kind: 'text'; key: string; text: string; tone?: Tone }
+  | { kind: 'understanding'; key: string }
+  | { kind: 'question'; key: string; active: boolean }
+  | { kind: 'ack'; key: string; keys: string[]; source: 'text' | 'attachment'; canRun?: boolean }
+  | { kind: 'assist'; key: string; reply: AssistReply }
   | { kind: 'notice'; key: string; notice: Notice }
   | { kind: 'plan'; key: string; agents: string[]; canRun: boolean; rerun?: boolean }
-  | { kind: 'missing_info'; key: string; active: boolean }
   | { kind: 'activity'; key: string; block: ActivityBlock }
   | { kind: 'answer'; key: string; reportSeq: number; version: number; adjusted: boolean; latest: boolean }
   | { kind: 'error'; key: string; error: string; canRetry: boolean }
 
-export type UserRole = 'demand' | 'input' | 'adjust' | 'note' | 'approve' | 'chat'
+export type UserRole = 'demand' | 'input' | 'adjust' | 'note' | 'approve' | 'chat' | 'attachment'
 
 export type Turn =
-  | { kind: 'user'; key: string; role: UserRole; text: string; detail?: string; pending?: boolean }
+  | {
+      kind: 'user'
+      key: string
+      role: UserRole
+      text: string
+      detail?: string
+      pending?: boolean
+      files?: string[] // nomes de arquivos enviados junto (mensagens locais)
+      attachment?: AttachmentView // role 'attachment': documento anexado ao case
+      attachments?: AttachmentView[] // documentos que foram junto com esta mensagem
+    }
   | { kind: 'assistant'; key: string; parts: Part[]; live: boolean }
 
 // Turnos que nascem no cliente (texto livre respondido localmente), ancorados ao último seq visto.
@@ -89,8 +102,21 @@ export function buildTurns(state: CaseState | null, events: CaseEvent[], opts: B
   let adjustedPending = false
   const gateComments = [...(state?.report?.human_gate.comments ?? [])]
   const locals = [...opts.local].sort((a, b) => a.afterSeq - b.afterSeq)
+  // anexos: os que chegam logo depois da demanda vão com ela; os demais vão com a próxima mensagem do analista
+  const demand: { turn: Extract<Turn, { kind: 'user' }> | null } = { turn: null }
+  let userSinceDemand = false
+  let executed = false
+  let fileBuffer: Array<{ seq: number; attachment: AttachmentView | undefined; name: string }> = []
+  const flushFiles = () => {
+    for (const f of fileBuffer) {
+      turns.push({ kind: 'user', key: `e${f.seq}`, role: 'attachment', text: f.name, attachment: f.attachment })
+    }
+    if (fileBuffer.length) cur = null
+    fileBuffer = []
+  }
 
   const assistant = (key: string) => {
+    if (fileBuffer.length) flushFiles()
     if (!cur) {
       cur = { kind: 'assistant', key: `a-${key}`, parts: [], live: false }
       turns.push(cur)
@@ -98,11 +124,18 @@ export function buildTurns(state: CaseState | null, events: CaseEvent[], opts: B
     return cur
   }
   const user = (t: Extract<Turn, { kind: 'user' }>) => {
+    if (fileBuffer.length) {
+      t.attachments = fileBuffer.map((f) => f.attachment).filter((a): a is AttachmentView => !!a)
+      fileBuffer = []
+    }
+    if (t.role === 'demand') demand.turn = t
+    else userSinceDemand = true
     turns.push(t)
     cur = null
   }
   const flushLocals = (upTo: number) => {
     while (locals.length && locals[0].afterSeq < upTo) {
+      flushFiles()
       turns.push(locals.shift()!.turn)
       cur = null
     }
@@ -126,8 +159,7 @@ export function buildTurns(state: CaseState | null, events: CaseEvent[], opts: B
         break
       case 'SCOPE_FROZEN': {
         const a = assistant(k)
-        const it = state?.interpreted
-        if (it) a.parts.push({ kind: 'text', key: `${k}-i`, text: understood(it) })
+        if (state?.interpreted) a.parts.push({ kind: 'understanding', key: `${k}-i` })
         a.parts.push({
           kind: 'notice',
           key: k,
@@ -154,13 +186,19 @@ export function buildTurns(state: CaseState | null, events: CaseEvent[], opts: B
           block = null
         }
         const isLast = !events.some((x) => x.seq > e.seq && x.type === 'MISSING_INFO_REQUESTED')
-        assistant(k).parts.push({ kind: 'missing_info', key: k, active: isLast && state?.status === 'waiting_input' })
+        assistant(k).parts.push({ kind: 'question', key: k, active: isLast && state?.status === 'waiting_input' })
         break
       }
       case 'INPUT_RECEIVED': {
-        const text = opts.inputs[inputIdx] ?? `Informação enviada (${((p.keys as string[]) ?? []).join(', ')})`
-        inputIdx += 1
-        user({ kind: 'user', key: k, role: 'input', text })
+        const keys = (p.keys as string[]) ?? []
+        if (p.source === 'attachment') {
+          assistant(k).parts.push({ kind: 'ack', key: `${k}-a`, keys, source: 'attachment' })
+        } else {
+          const text = opts.inputs[inputIdx] ?? `Informação enviada (${keys.join(', ')})`
+          inputIdx += 1
+          user({ kind: 'user', key: k, role: 'input', text })
+          if (p.source === 'text') assistant(k).parts.push({ kind: 'ack', key: `${k}-a`, keys, source: 'text' })
+        }
         // a Elegibilidade tinha bloqueado a execução: com a informação, a squad pode rodar de novo
         if (lastBlock?.status === 'blocked') {
           assistant(k).parts.push({
@@ -175,6 +213,7 @@ export function buildTurns(state: CaseState | null, events: CaseEvent[], opts: B
       }
       case 'ORCHESTRATOR_STARTED': {
         if (p.phase === 'bootstrap') break
+        executed = true
         const phase = p.phase as BlockPhase
         const a = assistant(k)
         if (phase === 'retry') {
@@ -191,6 +230,15 @@ export function buildTurns(state: CaseState | null, events: CaseEvent[], opts: B
         lastBlock = block
         reviewFindings = []
         a.parts.push({ kind: 'activity', key: k, block })
+        break
+      }
+      case 'DOCUMENT_ATTACHED': {
+        const attachment = state?.attachments.find((x) => x.doc_id === p.doc_id)
+        if (demand.turn && !userSinceDemand && !executed && attachment) {
+          demand.turn.attachments = [...(demand.turn.attachments ?? []), attachment]
+        } else {
+          fileBuffer.push({ seq: e.seq, attachment, name: attachment?.filename ?? String(p.doc_id) })
+        }
         break
       }
       case 'REVIEW_COMPLETED':
@@ -283,13 +331,16 @@ export function buildTurns(state: CaseState | null, events: CaseEvent[], opts: B
     }
   }
   flushLocals(Number.POSITIVE_INFINITY)
+  flushFiles()
 
   // Estado atual: o plano só pode ser executado se o case estiver planejado; retry só na última falha.
   const parts = turns.flatMap((t) => (t.kind === 'assistant' ? t.parts : []))
-  const plan = findLast(parts, 'plan')
-  if (plan) {
-    const after = parts.slice(parts.indexOf(plan) + 1)
-    plan.canRun = state?.status === 'planned' && !after.some((x) => x.kind === 'activity')
+  // o botão de executar fica na última mensagem que o oferece (plano ou confirmação de contexto)
+  let runner: Extract<Part, { kind: 'plan' | 'ack' }> | undefined
+  for (const x of parts) if (x.kind === 'plan' || (x.kind === 'ack' && x.source === 'text')) runner = x
+  if (runner) {
+    const after = parts.slice(parts.indexOf(runner) + 1)
+    runner.canRun = state?.status === 'planned' && !after.some((x) => x.kind === 'activity')
   }
   const err = findLast(parts, 'error')
   if (err && state?.status === 'failed') err.canRetry = lastBlock !== null
@@ -397,7 +448,7 @@ function applyAgentEvent(block: ActivityBlock, e: CaseEvent) {
           key: `n${e.seq}`,
           kind: 'injection',
           tone: 'danger',
-          text: `Um documento do cliente trazia instruções para os agentes${refs ? ` e citava ${(p.out_of_scope_refs as string[]).join(', ')}` : ''}. Ele foi tratado como dado, não como instrução.`,
+          text: `Um documento do case trazia instruções para os agentes${refs ? ` e citava ${(p.out_of_scope_refs as string[]).join(', ')}` : ''}. Ele foi tratado como dado, não como instrução.`,
         })
       }
       break
@@ -413,15 +464,4 @@ function applyAgentEvent(block: ActivityBlock, e: CaseEvent) {
       run.status = 'failed'
       break
   }
-}
-
-function understood(it: NonNullable<CaseState['interpreted']>): string {
-  const amount = it.requested_amount?.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    maximumFractionDigits: 0,
-  })
-  const what = [it.purpose ?? 'crédito', it.crop ? `de ${it.crop}` : '', it.cycle ?? ''].filter(Boolean).join(' ')
-  const client = (it.client_ref ?? 'informado').replace(/\.$/, '')
-  return `Entendi: ${what}${amount ? ` no valor de ${amount}` : ''}, para o cliente ${client}.`
 }

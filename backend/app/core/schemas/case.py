@@ -86,6 +86,36 @@ class CaseCounters(BaseModel):
     elapsed_ms: int = 0
 
 
+class OpenQuestion(BaseModel):
+    """Pergunta de volta ao analista. `blocking`: sem ela a squad não conclui (ex.: valor); senão é refinamento."""
+
+    key: str
+    question: str
+    blocking: bool = False
+
+
+class AttachmentView(BaseModel):
+    doc_id: str  # ANX-001: citável como SRC-DOCUMENTS-ANX-001 quando um agente lê o documento
+    filename: str
+    doc_type: str
+    size_bytes: int
+    chars: int
+    truncated: bool = False
+    flagged: bool = False  # Injection Guard: conteúdo com instruções embutidas
+    uploaded_at: datetime
+
+
+class AttachmentRequest(BaseModel):
+    user_id: str
+    filename: str
+    content_type: str = ""
+    data_base64: str
+
+
+class ReplyRequest(BaseModel):
+    text: str
+
+
 class CaseState(BaseModel):
     case_id: str
     status: CaseStatus
@@ -106,3 +136,6 @@ class CaseState(BaseModel):
     llm_mode: str = "real"
     error: str | None = None
     last_event_seq: int = 0
+    open_questions: list[OpenQuestion] = Field(default_factory=list)
+    attachments: list[AttachmentView] = Field(default_factory=list)
+    analyst_context: dict[str, str] = Field(default_factory=dict)  # o que o analista acrescentou em texto livre

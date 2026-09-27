@@ -1,14 +1,26 @@
 """Endpoints P0 (ARCHITECTURE.md §19.9). /api/agents é P1."""
 
+import base64
+import binascii
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.container import Container, get_container, llm_mode
-from app.core.schemas.case import CaseState, CreateCaseRequest, HumanReviewRequest, InputRequest
+from app.core.schemas.case import (
+    AttachmentRequest,
+    CaseState,
+    CreateCaseRequest,
+    HumanReviewRequest,
+    InputRequest,
+    ReplyRequest,
+)
 from app.core.schemas.events import Event
 from app.core.schemas.evidence import AgentOutputRecord, CalculationRecord, SourceRecord
 from app.core.schemas.report import Report
+from app.governance.loader import load_identities
+from app.orchestration.assist import AssistReply, AssistRequest, assist
+from app.orchestration.metrics import compute_metrics
 from app.orchestration.orchestrator import OrchestratorError
 
 router = APIRouter()
@@ -22,6 +34,29 @@ def _handle(exc: OrchestratorError) -> HTTPException:
 @router.get("/health")
 def health(c: Deps) -> dict:
     return {"ok": True, "llm_mode": llm_mode(c.settings), "demo_mode": c.settings.demo_mode}
+
+
+@router.post("/assist", response_model=AssistReply)
+def assist_message(body: AssistRequest, c: Deps) -> AssistReply:
+    """Lê a mensagem do analista: demanda (abrir case), dúvida de política, pergunta sobre o case, ajuste…"""
+    user = load_identities().get(body.user_id)
+    if user is None:
+        raise HTTPException(status_code=403, detail={"code": "unknown_user", "message": "usuário não encontrado"})
+    state = None
+    if body.case_id:
+        try:
+            state = c.orchestrator.get(body.case_id).state
+        except OrchestratorError as exc:
+            raise _handle(exc) from exc
+        if state.user_id != user.user_id:
+            raise HTTPException(status_code=403, detail={"code": "forbidden", "message": "case de outro usuário"})
+    return assist(body.text, user, state, c.knowledge)
+
+
+@router.get("/metrics")
+def metrics(c: Deps) -> dict:
+    """Desempenho dos agentes desde que o servidor subiu (estado em memória)."""
+    return compute_metrics(c.store, c.agents)
 
 
 @router.post("/cases", response_model=CaseState, status_code=201)
@@ -52,6 +87,28 @@ def list_events(case_id: str, c: Deps, after: Annotated[int, Query(ge=0)] = 0) -
 def provide_input(case_id: str, body: InputRequest, c: Deps) -> CaseState:
     try:
         return c.orchestrator.provide_input(case_id, body.answers).state
+    except OrchestratorError as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/cases/{case_id}/reply", response_model=CaseState)
+def reply(case_id: str, body: ReplyRequest, c: Deps) -> CaseState:
+    """Resposta em texto livre: completa um pedido de informação ou acrescenta contexto antes de rodar a squad."""
+    try:
+        return c.orchestrator.provide_text(case_id, body.text).state
+    except OrchestratorError as exc:
+        raise _handle(exc) from exc
+
+
+@router.post("/cases/{case_id}/attachments", response_model=CaseState, status_code=201)
+def attach(case_id: str, body: AttachmentRequest, c: Deps) -> CaseState:
+    """Documento anexado na conversa (base64). Vira documento do case, lido pelos agentes via Gateway."""
+    try:
+        data = base64.b64decode(body.data_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail={"code": "invalid_base64", "message": "arquivo inválido"}) from exc
+    try:
+        return c.orchestrator.attach_document(case_id, body.user_id, body.filename, data).state
     except OrchestratorError as exc:
         raise _handle(exc) from exc
 

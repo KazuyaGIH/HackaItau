@@ -1,19 +1,17 @@
-import { ArrowDown, ClipboardList, FileText, Lock, PanelLeft, ShieldAlert, Sprout, TriangleAlert, X } from 'lucide-react'
+import { ArrowDown, ClipboardList, FileText, FileWarning, Lock, PanelLeft, Sprout, TriangleAlert, X } from 'lucide-react'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { classify } from '../guard'
 import { seqOfKey } from '../hooks'
 import { usePanel } from '../panel'
-import { STARTERS } from '../starters'
+import { pdfFile } from '../pdf'
+import { STARTERS, type Starter } from '../starters'
 import { buildTurns, type Turn } from '../transcript'
 import type { CaseEvent } from '../types'
-import { ACTIVE, USER_ID, type Workspace } from '../workspace'
+import { ACTIVE, USER_ID, type SendOptions, type Workspace } from '../workspace'
 import { AssistantMessage } from './AssistantMessage'
 import { Composer, type ComposerMode } from './Composer'
 import { DecisionBar } from './DecisionBar'
 import { OrchestratorMark } from './ui'
 import { UserMessage } from './UserMessage'
-
-const localKey = () => `l-${Math.random().toString(36).slice(2, 10)}`
 
 interface Props {
   ws: Workspace
@@ -28,15 +26,11 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
   const events = caseData?.events ?? NO_EVENTS
   const status = state?.status
   const active = !!status && ACTIVE.has(status)
-  const creating = !!branch && !branch.caseId && !branch.error
+  const creating = !!branch?.creating
   const pending = ws.pending
-  // a mensagem pendente some quando o evento correspondente chega (criação: quando o case existe)
+  // a mensagem pendente some quando o evento correspondente chega (ou quando a resposta local entra)
   const pendingShown =
-    pending &&
-    (creating || (pending.sinceSeq > 0 && !events.some((e) => e.seq > pending.sinceSeq && USER_EVENTS.has(e.type))))
-      ? pending
-      : null
-  const [emptyNotice, setEmptyNotice] = useState<string | null>(null)
+    pending && !events.some((e) => e.seq > pending.sinceSeq && USER_EVENTS.has(e.type)) ? pending : null
 
   const turns = useMemo(() => {
     const t: Turn[] = buildTurns(state, events, {
@@ -44,7 +38,16 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
       inputs: branch?.inputs ?? [],
       active,
     })
-    if (pendingShown?.text) t.push({ kind: 'user', key: 'pending-user', role: 'chat', text: pendingShown.text, pending: true })
+    if (pendingShown && (pendingShown.text || pendingShown.files.length)) {
+      t.push({
+        kind: 'user',
+        key: 'pending-user',
+        role: 'chat',
+        text: pendingShown.text,
+        files: pendingShown.files,
+        pending: true,
+      })
+    }
     if (pendingShown || creating) t.push({ kind: 'assistant', key: 'pending-assistant', parts: [], live: true })
     return t
   }, [state, events, branch, active, pendingShown, creating])
@@ -52,7 +55,9 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
   const thinking = creating
     ? 'Lendo a demanda e identificando o cliente'
     : pendingShown
-      ? 'Registrando a sua decisão'
+      ? pendingShown.text
+        ? 'Lendo a sua mensagem'
+        : 'Lendo o documento'
       : status === 'interpreting'
         ? 'Lendo a demanda e identificando o cliente'
         : status === 'consolidating'
@@ -63,7 +68,7 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
 
   // Anima só o que chegou depois que a conversa foi aberta (o histórico aparece parado).
   const branchKey = branch?.id ?? 'none'
-  const loadedSeq = caseData ? caseData.lastSeq : null
+  const loadedSeq = caseData ? caseData.lastSeq : branch && !branch.caseId ? 0 : null
   const [baseline, setBaseline] = useState<{ id: string; seq: number | null }>({ id: '', seq: null })
   if (baseline.id !== branchKey || (baseline.seq === null && loadedSeq !== null)) {
     setBaseline({ id: branchKey, seq: loadedSeq })
@@ -90,50 +95,33 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
     setAtBottom(true)
   }
 
-  const lastSeq = caseData?.lastSeq ?? 0
-  const send = (text: string, opts: { adversarial: boolean; target: string }) => {
-    setEmptyNotice(null)
-    if (!conv || !branch) {
-      const intent = classify(text, null)
-      if (intent.kind === 'reply') setEmptyNotice(intent.text)
-      else ws.startConversation(text, opts.adversarial)
-      return
-    }
-    const intent = classify(text, state)
-    if (intent.kind === 'adjust') {
-      void ws.humanReview(branch, { decision: 'request_adjustment', comment: text, target_agent: opts.target })
-      return
-    }
-    const reply = intent.kind === 'reply' ? intent.text : 'Esta conversa já tem uma demanda. Para outra, comece uma nova conversa.'
-    const k = localKey()
-    ws.addLocal(conv.id, branch.id, [
-      { afterSeq: lastSeq, turn: { kind: 'user', key: `${k}-u`, role: 'chat', text } },
-      {
-        afterSeq: lastSeq,
-        turn: { kind: 'assistant', key: `${k}-a`, parts: [{ kind: 'text', key: `${k}-t`, text: reply }], live: false },
-      },
-    ])
-  }
+  const send = (text: string, opts: SendOptions) => void ws.send(text, opts)
+  const suggest = (text: string) => send(text, { target: '', files: [] })
+  const start = (s: Starter) => send(s.prompt, { target: '', files: s.file ? [pdfFile(s.file.name, s.file.lines)] : [] })
 
   const mode: ComposerMode = !branch
     ? 'new'
-    : caseData?.missing || status === 'completed_demo' || status === 'waiting_input'
+    : caseData?.missing
       ? 'locked'
       : creating || active || pendingShown
         ? 'working'
-        : status === 'human_review_required'
-          ? 'adjust'
-          : 'chat'
+        : !branch.caseId
+          ? 'new'
+          : status === 'human_review_required'
+            ? 'adjust'
+            : status === 'waiting_input' || status === 'planned'
+              ? 'reply'
+              : 'chat'
   const placeholder = {
-    new: 'Descreva a demanda: cliente, valor, finalidade e safra',
-    chat: 'Escreva uma mensagem',
-    adjust: 'Descreva um ajuste para a squad',
+    new: 'Descreva a operação ou faça uma pergunta sobre crédito agro',
+    chat: 'Pergunte sobre a análise, as políticas ou os documentos',
+    reply:
+      status === 'waiting_input'
+        ? 'Responda aqui ou anexe o documento'
+        : 'Acrescente contexto (prazo, garantias, observações) ou execute a squad',
+    adjust: 'Peça um ajuste ou pergunte sobre a análise',
     working: 'A squad está trabalhando',
-    locked: caseData?.missing
-      ? 'Este case não existe mais no servidor'
-      : status === 'waiting_input'
-        ? 'Responda no formulário acima'
-        : 'Etapa concluída. Para outra demanda, comece uma nova conversa',
+    locked: 'Este case não existe mais no servidor',
   }[mode]
 
   if (!conv || !branch) {
@@ -148,16 +136,10 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
             final é sempre sua.
           </p>
           <Composer mode="new" placeholder={placeholder} onSend={send} autoFocus />
-          {emptyNotice && (
-            <div className="callout warn appear">
-              <TriangleAlert size={16} />
-              <p>{emptyNotice}</p>
-            </div>
-          )}
           <div className="suggestions">
             {STARTERS.map((s) => (
-              <button key={s.label} type="button" onClick={() => ws.startConversation(s.prompt, s.adversarial)}>
-                {s.adversarial ? <ShieldAlert size={16} /> : <Sprout size={16} />}
+              <button key={s.label} type="button" onClick={() => start(s)}>
+                {s.file ? <FileWarning size={16} /> : <Sprout size={16} />}
                 <span>
                   <strong>{s.label}</strong>
                   <span className="muted">{s.hint}</span>
@@ -212,9 +194,9 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
                 isNew={isNew}
                 busy={active || !!pendingShown}
                 onRun={() => state && void ws.run(state.case_id)}
-                onInput={(answers) => ws.provideInput(conv.id, branch, answers)}
                 onRetry={() => state && void ws.retry(state.case_id)}
                 onRegenerate={() => ws.branchFrom(conv, branch.prompt, 'regenerate')}
+                onSuggest={suggest}
               />
             ),
           )}
@@ -275,7 +257,13 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
 
 const NO_EVENTS: CaseEvent[] = []
 
-const USER_EVENTS: ReadonlySet<string> = new Set(['HUMAN_ADJUSTMENT_REQUESTED', 'HUMAN_APPROVED', 'INPUT_RECEIVED'])
+const USER_EVENTS: ReadonlySet<string> = new Set([
+  'CASE_CREATED',
+  'HUMAN_ADJUSTMENT_REQUESTED',
+  'HUMAN_APPROVED',
+  'INPUT_RECEIVED',
+  'DOCUMENT_ATTACHED',
+])
 
 interface TopBarProps {
   sidebarOpen: boolean

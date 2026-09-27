@@ -37,6 +37,20 @@ export function Chips({ ids }: { ids: string[] }) {
   )
 }
 
+// Fontes recolhidas: um link discreto ("2 fontes") que abre as referências só quando o analista quiser.
+export function Sources({ ids }: { ids: string[] }) {
+  const [open, setOpen] = useState(false)
+  if (!ids.length) return null
+  return (
+    <span className="sources-toggle">
+      <button type="button" className="link" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {ids.length === 1 ? '1 fonte' : `${ids.length} fontes`}
+      </button>
+      {open && <Chips ids={ids} />}
+    </span>
+  )
+}
+
 export function EvidenceView({ caseId, id }: { caseId: string; id: string }) {
   const [item, setItem] = useState<EvidenceItem | null>(null)
   const [error, setError] = useState<string | null>(null)

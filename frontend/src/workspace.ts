@@ -2,14 +2,17 @@
 // Cases ativos são acompanhados por polling em paralelo — times diferentes podem trabalhar ao mesmo tempo.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, api } from './api'
-import type { LocalMessage } from './transcript'
-import type { CaseEvent, CaseState, CaseStatus, HumanReviewRequest, Report } from './types'
+import { localRefusal } from './guard'
+import type { LocalMessage, Turn } from './transcript'
+import type { AssistReply, CaseEvent, CaseState, CaseStatus, HumanReviewRequest, Report } from './types'
 
 export const USER_ID = 'analyst-001'
 const POLL_MS = 1200
 const STORAGE_KEY = 'agent-squads.conversations.v1'
 
 export const ACTIVE: ReadonlySet<CaseStatus> = new Set(['interpreting', 'running', 'reviewing', 'consolidating'])
+export const MAX_FILE_BYTES = 2_000_000
+export const ACCEPTED_FILES = '.pdf,.txt,.md,.csv,.json'
 
 export interface Branch {
   id: string
@@ -19,7 +22,8 @@ export interface Branch {
   origin: 'new' | 'edit' | 'regenerate'
   createdAt: number
   error?: string
-  local: LocalMessage[] // mensagens que só existem no cliente (recusas locais, textos do analista)
+  creating?: boolean // o case está sendo aberto no backend
+  local: LocalMessage[] // mensagens que só existem no cliente (respostas do assistente, recusas locais)
   inputs: string[] // respostas a pedidos de informação, na ordem em que foram enviadas
 }
 
@@ -51,11 +55,34 @@ const newBranch = (prompt: string, adversarial: boolean, origin: Branch['origin'
   inputs: [],
 })
 
-// Texto que o analista acabou de enviar; some quando o evento correspondente (seq > sinceSeq) chega do backend.
+// Texto que o analista acabou de enviar; some quando o evento correspondente (seq > sinceSeq) chega do backend
+// ou quando a resposta local do assistente entra na conversa.
 export interface PendingMessage {
   text: string
   sinceSeq: number
+  files: string[]
 }
+
+export interface SendOptions {
+  target: string
+  files: File[]
+}
+
+async function toBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(binary)
+}
+
+const lk = () => `l-${Math.random().toString(36).slice(2, 10)}`
+
+const userTurn = (text: string, files: string[] = []): Turn => ({ kind: 'user', key: `${lk()}-u`, role: 'chat', text, files })
+const assistTurn = (reply: AssistReply): Turn => {
+  const k = lk()
+  return { kind: 'assistant', key: `${k}-a`, parts: [{ kind: 'assist', key: `${k}-p`, reply }], live: false }
+}
+const textReply = (message: string): AssistReply => ({ kind: 'clarify', message, bullets: [], citations: [], suggestions: [] })
 
 function load(): Conversation[] {
   try {
@@ -190,38 +217,143 @@ export function useWorkspace() {
     [refresh],
   )
 
+  const upload = useCallback(
+    async (caseId: string, files: File[]) => {
+      for (const f of files) {
+        if (f.size > MAX_FILE_BYTES) {
+          setError(`${f.name}: arquivo maior que 2 MB.`)
+          continue
+        }
+        try {
+          await api.attach(caseId, {
+            user_id: USER_ID,
+            filename: f.name,
+            content_type: f.type,
+            data_base64: await toBase64(f),
+          })
+        } catch (e) {
+          setError(`${f.name}: ${(e as Error).message}`)
+        }
+      }
+      await refresh(caseId)
+    },
+    [refresh],
+  )
+
   const startBranch = useCallback(
-    async (convId: string, b: Branch, autoRun: boolean) => {
+    async (convId: string, b: Branch, autoRun: boolean, files: File[] = []) => {
       setError(null)
-      setPending((p) => ({ ...p, [b.id]: { text: b.prompt, sinceSeq: 0 } }))
+      updateBranch(convId, b.id, (x) => ({ ...x, prompt: b.prompt, creating: true, error: undefined }))
+      setPending((p) => ({ ...p, [b.id]: { text: b.prompt, sinceSeq: 0, files: files.map((f) => f.name) } }))
       try {
         const st = await api.createCase({
           user_id: USER_ID,
           prompt: b.prompt,
           demo_options: { adversarial_document: b.adversarial },
         })
-        updateBranch(convId, b.id, (x) => ({ ...x, caseId: st.case_id, error: undefined }))
+        updateBranch(convId, b.id, (x) => ({ ...x, caseId: st.case_id, creating: false }))
         setCases((all) => ({ ...all, [st.case_id]: { state: st, events: [], lastSeq: 0, reports: {}, missing: false } }))
+        if (files.length) await upload(st.case_id, files)
         await refresh(st.case_id)
         if (autoRun && st.status === 'planned') await call(st.case_id, () => api.run(st.case_id))
       } catch (e) {
-        updateBranch(convId, b.id, (x) => ({ ...x, error: (e as Error).message }))
+        updateBranch(convId, b.id, (x) => ({ ...x, creating: false, error: (e as Error).message }))
       } finally {
         setPending((p) => ({ ...p, [b.id]: null }))
       }
     },
-    [call, refresh, updateBranch],
+    [call, refresh, updateBranch, upload],
   )
 
-  const startConversation = useCallback(
-    (prompt: string, adversarial: boolean) => {
-      const b = newBranch(prompt, adversarial, 'new')
-      const conv: Conversation = { id: uid(), createdAt: Date.now(), branches: [b], active: 0 }
-      setConversations((cs) => [conv, ...cs])
-      setCurrentId(conv.id)
-      void startBranch(conv.id, b, false)
+  const addLocal = useCallback(
+    (convId: string, branchId: string, messages: LocalMessage[]) =>
+      updateBranch(convId, branchId, (b) => ({ ...b, local: [...b.local, ...messages] })),
+    [updateBranch],
+  )
+
+  const humanReview = useCallback(
+    async (b: Branch, body: HumanReviewRequest) => {
+      if (!b.caseId) return
+      const caseId = b.caseId
+      const sinceSeq = casesRef.current[caseId]?.lastSeq ?? 0
+      setPending((p) => ({ ...p, [b.id]: { text: body.comment, sinceSeq, files: [] } }))
+      await call(caseId, () => api.humanReview(caseId, body))
+      setPending((p) => ({ ...p, [b.id]: null }))
     },
-    [startBranch],
+    [call],
+  )
+
+  // Toda mensagem do analista passa por aqui. O assistente do Orquestrador (backend) diz o que ela é:
+  // uma demanda (abre a squad), uma resposta ou um ajuste para o case, ou uma pergunta que ele responde direto.
+  const send = useCallback(
+    async (text: string, opts: SendOptions) => {
+      let conv = conversationsRef.current.find((c) => c.id === currentId) ?? null
+      if (!conv) {
+        const fresh = newBranch('', false, 'new')
+        conv = { id: uid(), createdAt: Date.now(), branches: [fresh], active: 0 }
+        const created = conv
+        setConversations((cs) => [created, ...cs])
+        setCurrentId(created.id)
+      }
+      const b = conv.branches[conv.active]
+      const caseId = b.caseId
+      const data = caseId ? casesRef.current[caseId] : null
+      const state = data?.state ?? null
+      const lastSeq = data?.lastSeq ?? 0
+      const fileNames = opts.files.map((f) => f.name)
+      const local = (...turns: Turn[]) =>
+        addLocal(
+          conv.id,
+          b.id,
+          turns.map((turn) => ({ afterSeq: lastSeq, turn })),
+        )
+
+      const refusal = text ? localRefusal(text, state) : null
+      if (refusal) {
+        local(userTurn(text, fileNames), assistTurn(textReply(refusal)))
+        return
+      }
+      setError(null)
+      setPending((p) => ({ ...p, [b.id]: { text, sinceSeq: lastSeq, files: fileNames } }))
+      try {
+        if (caseId && opts.files.length) await upload(caseId, opts.files)
+        if (!text) return
+        const reply = await api.assist({ user_id: USER_ID, text, case_id: caseId })
+        if (!caseId) {
+          if (reply.kind === 'credit_demand') {
+            await startBranch(conv.id, { ...b, prompt: text }, false, opts.files)
+            return
+          }
+          const note = opts.files.length
+            ? [assistTurn(textReply('Os anexos entram quando houver uma análise aberta: descreva a operação e envie de novo.'))]
+            : []
+          local(userTurn(text, fileNames), assistTurn(reply), ...note)
+          return
+        }
+        if (reply.kind === 'adjustment') {
+          setPending((p) => ({ ...p, [b.id]: null }))
+          await humanReview(b, { decision: 'request_adjustment', comment: text, target_agent: opts.target })
+        } else if (reply.kind === 'case_reply') {
+          updateBranch(conv.id, b.id, (x) => ({ ...x, inputs: [...x.inputs, text] }))
+          await call(caseId, () => api.reply(caseId, text))
+        } else if (reply.kind === 'credit_demand') {
+          local(
+            userTurn(text, fileNames),
+            assistTurn(
+              textReply('Esta conversa já tem uma operação em análise. Para outra demanda, comece uma nova conversa.'),
+            ),
+          )
+        } else {
+          // com case aberto, os anexos já aparecem como cartões (DOCUMENT_ATTACHED): não repete os nomes aqui
+          local(userTurn(text), assistTurn(reply))
+        }
+      } catch (e) {
+        setError((e as Error).message)
+      } finally {
+        setPending((p) => ({ ...p, [b.id]: null }))
+      }
+    },
+    [addLocal, call, currentId, humanReview, startBranch, updateBranch, upload],
   )
 
   // Ramificação estilo ChatGPT: editar a demanda ou gerar de novo cria um case novo ao lado do anterior.
@@ -243,34 +375,6 @@ export function useWorkspace() {
     setConversations((cs) => cs.map((c) => (c.id === convId ? { ...c, active: index } : c)))
   }, [])
 
-  const addLocal = useCallback(
-    (convId: string, branchId: string, messages: LocalMessage[]) =>
-      updateBranch(convId, branchId, (b) => ({ ...b, local: [...b.local, ...messages] })),
-    [updateBranch],
-  )
-
-  const provideInput = useCallback(
-    (convId: string, b: Branch, answers: Record<string, string>) => {
-      if (!b.caseId) return
-      const caseId = b.caseId
-      updateBranch(convId, b.id, (x) => ({ ...x, inputs: [...x.inputs, Object.values(answers).join(', ')] }))
-      void call(caseId, () => api.provideInput(caseId, { answers }))
-    },
-    [call, updateBranch],
-  )
-
-  const humanReview = useCallback(
-    async (b: Branch, body: HumanReviewRequest) => {
-      if (!b.caseId) return
-      const caseId = b.caseId
-      const sinceSeq = casesRef.current[caseId]?.lastSeq ?? 0
-      setPending((p) => ({ ...p, [b.id]: { text: body.comment, sinceSeq } }))
-      await call(caseId, () => api.humanReview(caseId, body))
-      setPending((p) => ({ ...p, [b.id]: null }))
-    },
-    [call],
-  )
-
   const run = useCallback((caseId: string) => call(caseId, () => api.run(caseId)), [call])
   const retry = useCallback((caseId: string) => call(caseId, () => api.retry(caseId)), [call])
 
@@ -280,17 +384,20 @@ export function useWorkspace() {
     (conv: Conversation): string => {
       const b = conv.branches[conv.active]
       const it = b.caseId ? cases[b.caseId]?.state?.interpreted : null
-      if (!it?.purpose) return b.prompt
-      const what = `${it.purpose}${it.crop ? ` de ${it.crop}` : ''}`
-      const title = it.client_ref ? `${what}, ${it.client_ref}` : what
-      return title.charAt(0).toUpperCase() + title.slice(1)
+      if (it?.purpose) {
+        const what = `${it.purpose}${it.crop ? ` de ${it.crop}` : ''}`
+        const title = it.client_ref ? `${what}, ${it.client_ref}` : what
+        return title.charAt(0).toUpperCase() + title.slice(1)
+      }
+      const firstLocal = b.local.find((m) => m.turn.kind === 'user')?.turn
+      return b.prompt || (firstLocal?.kind === 'user' ? firstLocal.text : '') || 'Nova conversa'
     },
     [cases],
   )
   const statusOf = useCallback(
     (conv: Conversation): CaseStatus | 'creating' | 'error' | null => {
       const b = conv.branches[conv.active]
-      if (!b.caseId) return b.error ? 'error' : 'creating'
+      if (!b.caseId) return b.error ? 'error' : b.creating ? 'creating' : null
       return cases[b.caseId]?.state?.status ?? null
     },
     [cases],
@@ -307,12 +414,10 @@ export function useWorkspace() {
       setError,
       openConversation: setCurrentId,
       newChat: () => setCurrentId(null),
-      startConversation,
+      send,
       branchFrom,
       restartBranch,
       selectBranch,
-      addLocal,
-      provideInput,
       humanReview,
       run,
       retry,
@@ -326,12 +431,10 @@ export function useWorkspace() {
       caseData,
       pending,
       error,
-      startConversation,
+      send,
       branchFrom,
       restartBranch,
       selectBranch,
-      addLocal,
-      provideInput,
       humanReview,
       run,
       retry,

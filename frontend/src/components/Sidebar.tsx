@@ -1,4 +1,14 @@
-import { CircleAlert, CircleCheck, CircleDot, FlaskConical, LoaderCircle, PanelLeft, SquarePen, User } from 'lucide-react'
+import {
+  ChartColumn,
+  CircleAlert,
+  CircleCheck,
+  CircleDot,
+  FlaskConical,
+  LoaderCircle,
+  PanelLeft,
+  SquarePen,
+  User,
+} from 'lucide-react'
 import type { CaseStatus } from '../types'
 import { ACTIVE, USER_ID, type Conversation } from '../workspace'
 import { OrchestratorMark } from './ui'
@@ -11,6 +21,8 @@ interface Props {
   onOpen: (id: string) => void
   onNew: () => void
   onClose: () => void
+  onPerformance: () => void
+  performanceActive: boolean
   llmReady: boolean | null
 }
 
@@ -26,7 +38,18 @@ function StatusIcon({ status }: { status: CaseStatus | 'creating' | 'error' | nu
   return null
 }
 
-export function Sidebar({ conversations, currentId, statusOf, titleOf, onOpen, onNew, onClose, llmReady }: Props) {
+export function Sidebar({
+  conversations,
+  currentId,
+  statusOf,
+  titleOf,
+  onOpen,
+  onNew,
+  onClose,
+  onPerformance,
+  performanceActive,
+  llmReady,
+}: Props) {
   return (
     <nav className="sidebar" aria-label="Conversas">
       <div className="sidebar-top">
@@ -43,6 +66,10 @@ export function Sidebar({ conversations, currentId, statusOf, titleOf, onOpen, o
         <SquarePen size={17} />
         Nova conversa
       </button>
+      <button type="button" className={`new-chat${performanceActive ? ' current' : ''}`} onClick={onPerformance}>
+        <ChartColumn size={17} />
+        Desempenho dos agentes
+      </button>
 
       <div className="conv-list">
         {conversations.length > 0 && <p className="conv-label">Conversas</p>}
@@ -52,7 +79,7 @@ export function Sidebar({ conversations, currentId, statusOf, titleOf, onOpen, o
             <button
               key={c.id}
               type="button"
-              className={`conv${c.id === currentId ? ' current' : ''}`}
+              className={`conv${c.id === currentId && !performanceActive ? ' current' : ''}`}
               onClick={() => onOpen(c.id)}
               title={titleOf(c)}
             >

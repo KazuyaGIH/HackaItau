@@ -9,6 +9,7 @@ Review → consolidate → human gate de novo. Retry: um case `failed` retoma do
 """
 
 import asyncio
+from datetime import datetime, timezone
 
 from app.agents.registry import AgentRegistry
 from app.agents.review.merge import merge_review
@@ -18,18 +19,28 @@ from app.agents.runtime import AgentExecutionError, AgentRuntime
 from app.calculations.policy_params import load_policy_params
 from app.config import Settings
 from app.core.schemas.agent import CARRY_OVER_ACTION, HUMAN_ADJUSTMENT_ACTION, AgentResult, ReworkInstruction, TaskSpec
-from app.core.schemas.case import AgentCardState, AgentStatus, CaseStatus, DemoOptions, MissingInfoRequest
+from app.core.schemas.case import (
+    AgentCardState,
+    AgentStatus,
+    AttachmentView,
+    CaseStatus,
+    DemoOptions,
+    MissingInfoRequest,
+)
 from app.core.schemas.context import CaseScope, ExecutionContext, UserIdentity
 from app.core.schemas.events import EventType
 from app.core.schemas.outputs import AIReviewOutput, EligibilityOutput, Finding, ReviewOutput
 from app.core.schemas.report import HumanGateView
 from app.core.store import CaseRecord, CaseStore, RunJob
 from app.data.repository import DataRepository, KnowledgeRetriever
+from app.documents.attachments import MAX_PER_CASE, AttachmentError, extract_text, infer_type
 from app.governance.bootstrap_resolver import BootstrapClientResolver
+from app.governance.injection_guard import scan_record
 from app.governance.loader import load_identities
 from app.governance.output_guard import OutputGuard
+from app.orchestration.clarify import answers_from_text, context_from, describe_context, open_questions
 from app.orchestration.consolidator import consolidate
-from app.orchestration.interpreter import interpret, parse_amount
+from app.orchestration.interpreter import heuristic_interpret, interpret, parse_amount
 from app.orchestration.plans import ELIGIBILITY, REVIEW, RISK, PlanStep, dependents_of, plan_for
 from app.tools.deps import ToolDeps
 from app.tools.gateway import Toolbox
@@ -80,6 +91,7 @@ class Orchestrator:
         rec.state.status = CaseStatus.interpreting
         rec.state.interpreted = await interpret(prompt, self._runtime.provider, self._runtime.model)
         self._bootstrap(rec, user, rec.state.interpreted.client_ref)
+        rec.state.open_questions = open_questions(rec.state.interpreted)
         rec.touch()
         return rec
 
@@ -96,10 +108,113 @@ class Orchestrator:
             self._bootstrap(rec, user, client_ref)
         else:
             # scope já congelado: input só completa dados do case (UNTRUSTED, vai como task.inputs); nunca muda scope
-            rec.answers.update({k: v for k, v in answers.items() if k not in ("client_ref", "client_id")})
-            self._apply_demand_answers(rec, answers)
             rec.state.missing_info = None
             rec.state.status = CaseStatus.planned
+        self._apply_answers(rec, answers)
+        rec.touch()
+        return rec
+
+    def provide_text(self, case_id: str, text: str) -> CaseRecord:
+        """Resposta do analista em texto livre (chat). Pedido de informação pendente → answers do que foi pedido;
+        case planejado → contexto extra para a squad (prazo, garantias, observações). Nunca muda escopo."""
+        rec = self._get(case_id)
+        text = text.strip()
+        if not text:
+            raise OrchestratorError("empty_text", "mensagem vazia", 422)
+        if rec.state.status == CaseStatus.waiting_input and rec.state.missing_info is not None:
+            return self.provide_input(case_id, answers_from_text(text, rec.state.missing_info.items))
+        if rec.state.status != CaseStatus.planned:
+            raise OrchestratorError("not_accepting_text", f"case em '{rec.state.status.value}' não recebe contexto agora")
+        h = heuristic_interpret(text)
+        it = rec.state.interpreted
+        answers: dict = context_from(h)
+        # se o valor ainda não era conhecido, um número solto na resposta é o valor
+        if (amount := parse_amount(text, bare_number_ok=it is not None and it.requested_amount is None)) is not None:
+            answers["requested_amount"] = amount
+        answers |= {k: v for k in ("purpose", "crop", "cycle") if (v := getattr(h, k))}
+        previous = str(rec.answers.get("observacoes_do_analista") or "")
+        answers["observacoes_do_analista"] = f"{previous}\n{text}".strip()
+        rec.events.emit(EventType.INPUT_RECEIVED, {"keys": sorted(answers), "source": "text"})
+        self._apply_answers(rec, answers)
+        rec.touch()
+        return rec
+
+    def _apply_answers(self, rec: CaseRecord, answers: dict) -> None:
+        """Respostas completam a leitura da demanda e viram contexto (answers → task.inputs, UNTRUSTED)."""
+        rec.answers.update({k: v for k, v in answers.items() if k not in ("client_ref", "client_id")})
+        self._apply_demand_answers(rec, answers)
+        it = rec.state.interpreted
+        if it is not None:
+            update: dict = {}
+            if isinstance(answers.get("prazo_desejado_meses"), int):
+                update["tenor_months"] = answers["prazo_desejado_meses"]
+            if isinstance(answers.get("garantias_oferecidas"), str):
+                update["guarantees"] = sorted(set(it.guarantees) | set(answers["garantias_oferecidas"].split(", ")))
+            for key, field in (("regiao", "region"), ("area_hectares", "area_hectares")):
+                if answers.get(key):
+                    update[field] = answers[key]
+            if answers.get("tipo_de_operacao"):
+                update["request_kind"] = answers["tipo_de_operacao"]
+            if update:
+                rec.state.interpreted = it.model_copy(update=update)
+        rec.state.analyst_context = describe_context(rec.answers)
+        rec.state.open_questions = open_questions(rec.state.interpreted)
+
+    # ------------------------------------------------------------- attachments
+
+    def attach_document(self, case_id: str, user_id: str, filename: str, data: bytes) -> CaseRecord:
+        """Documento anexado na conversa: vira documento do case (UNTRUSTED), lido pelos agentes via Gateway."""
+        rec = self._get(case_id)
+        if rec.state.user_id != user_id:
+            raise OrchestratorError("forbidden", "só quem abriu o case pode anexar documentos", 403)
+        if rec.state.status in (CaseStatus.running, CaseStatus.interpreting, CaseStatus.completed_demo):
+            raise OrchestratorError("not_accepting_documents", f"case em '{rec.state.status.value}' não recebe anexos agora")
+        if len(rec.attachments) >= MAX_PER_CASE:
+            raise OrchestratorError("attachment_limit", f"limite de {MAX_PER_CASE} anexos por case", 422)
+        try:
+            text, truncated = extract_text(filename, data)
+        except AttachmentError as exc:
+            raise OrchestratorError("invalid_attachment", str(exc), 422) from exc
+
+        doc_id = f"ANX-{len(rec.attachments) + 1:03d}"
+        now = datetime.now(timezone.utc)
+        record = {
+            "doc_id": doc_id,
+            "type": infer_type(filename, text),
+            "title": f"Anexo do analista: {filename}",
+            "issued_at": now.date().isoformat(),
+            "extracted": {},
+            "content": text,
+        }
+        flagged = bool(rec.state.scope and scan_record(record, rec.state.scope).flagged)
+        rec.attachments.append(record)
+        rec.state.attachments.append(
+            AttachmentView(
+                doc_id=doc_id,
+                filename=filename,
+                doc_type=record["type"],
+                size_bytes=len(data),
+                chars=len(text),
+                truncated=truncated,
+                flagged=flagged,
+                uploaded_at=now,
+            )
+        )
+        rec.events.emit(
+            EventType.DOCUMENT_ATTACHED,
+            {"doc_id": doc_id, "doc_type": record["type"], "chars": len(text), "truncated": truncated, "flagged": flagged},
+        )
+        # a Elegibilidade tinha bloqueado por este tipo de documento: o anexo cumpre o pedido
+        info = rec.state.missing_info
+        if rec.state.status == CaseStatus.waiting_input and info is not None and info.reason == "eligibility_blocked":
+            remaining = [i for i in info.items if i != record["type"]]
+            if len(remaining) < len(info.items):
+                if remaining:
+                    rec.state.missing_info = info.model_copy(update={"items": remaining})
+                else:
+                    rec.events.emit(EventType.INPUT_RECEIVED, {"keys": [record["type"]], "source": "attachment"})
+                    rec.state.missing_info = None
+                    rec.state.status = CaseStatus.planned
         rec.touch()
         return rec
 
@@ -421,7 +536,9 @@ class Orchestrator:
             case_scope=rec.state.scope,
         )
         tags = ("adversarial",) if rec.state.demo_options.adversarial_document else ()
-        deps = ToolDeps(self._repo, self._knowledge, tags, agent_id=step.agent_id, round=round_)
+        deps = ToolDeps(
+            self._repo, self._knowledge, tags, agent_id=step.agent_id, round=round_, attachments=tuple(rec.attachments)
+        )
         toolbox = Toolbox(ctx, agent.card, deps, rec.events, rec.evidence)
 
         self._set_agent(rec, step.agent_id, AgentStatus.running, round_)

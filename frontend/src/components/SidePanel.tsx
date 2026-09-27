@@ -33,7 +33,11 @@ export function SidePanel({ view, caseId, state, events, reports, onNavigate, on
     const seq = view.reportSeq ?? versions[versions.length - 1] ?? null
     const report = (seq !== null ? reports[seq] : null) ?? state?.report ?? null
     title = 'Relatório para revisão humana'
-    body = report ? <ReportView report={report} state={state} /> : <p className="muted">O relatório ainda não foi consolidado.</p>
+    body = report ? (
+      <ReportView report={report} state={state} section={view.section} />
+    ) : (
+      <p className="muted">O relatório ainda não foi consolidado.</p>
+    )
     if (versions.length > 1) {
       const current = seq ?? versions[versions.length - 1]
       body = (

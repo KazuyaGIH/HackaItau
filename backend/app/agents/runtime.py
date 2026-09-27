@@ -204,16 +204,22 @@ class AgentRuntime:
                     task_id=task.task_id,
                 )
                 raise AgentExecutionError(agent_id, f"provider_error: {exc}") from exc
+            prompt_chars = sum(len(m.content) for m in messages)
             usage = LLMUsage(
                 model=resp.usage.model,
                 tokens_in=usage.tokens_in + resp.usage.tokens_in,
                 tokens_out=usage.tokens_out + resp.usage.tokens_out,
                 latency_ms=usage.latency_ms + (resp.usage.latency_ms or int((time.monotonic() - started) * 1000)),
                 retries=retries,
+                prompt_chars=usage.prompt_chars + prompt_chars,
             )
             events.emit(
                 EventType.LLM_CALLED,
-                {"ok": True, "attempt": attempt + 1, "usage": resp.usage.model_dump()},
+                {
+                    "ok": True,
+                    "attempt": attempt + 1,
+                    "usage": resp.usage.model_dump() | {"prompt_chars": prompt_chars},
+                },
                 agent_id=agent_id,
                 task_id=task.task_id,
             )
@@ -245,4 +251,5 @@ def _merge_usage(total: LLMUsage, call: LLMUsage) -> LLMUsage:
         tokens_out=total.tokens_out + call.tokens_out,
         latency_ms=total.latency_ms + call.latency_ms,
         retries=total.retries + call.retries,
+        prompt_chars=total.prompt_chars + call.prompt_chars,
     )

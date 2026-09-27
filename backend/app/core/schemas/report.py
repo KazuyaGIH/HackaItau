@@ -96,6 +96,17 @@ class HumanGateView(BaseModel):
     notice: str = "Decisões materiais permanecem sob responsabilidade humana."
 
 
+class PolicyLimits(BaseModel):
+    """Limites da política (POL-CRED-002) que o código usa nas classificações. Só referência para exibir."""
+
+    source_doc_id: str = ""
+    coverage_comfortable_min: float | None = None
+    coverage_reduced_buffer_min: float | None = None
+    coverage_attention_required_min: float | None = None
+    net_debt_ebitda_max: float | None = None
+    pro_forma_leverage_max: float | None = None
+
+
 class Report(BaseModel):
     case_id: str
     client_id: str
@@ -116,3 +127,4 @@ class Report(BaseModel):
     review: ReviewView
     governance: GovernanceView
     human_gate: HumanGateView
+    policy_limits: PolicyLimits = PolicyLimits()

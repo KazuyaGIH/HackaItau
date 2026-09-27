@@ -31,6 +31,36 @@ _AMOUNT_RE = re.compile(
     re.IGNORECASE,
 )
 _CYCLE_RE = re.compile(r"\b(20\d{2})\s*/\s*(20)?(\d{2})\b")
+_TENOR_MONTHS_RE = re.compile(r"\b(\d{1,3})\s*(?:meses|m[eê]s)\b", re.IGNORECASE)
+_TENOR_YEARS_RE = re.compile(r"\b(\d{1,2})\s*anos?\b", re.IGNORECASE)
+_AREA_RE = re.compile(r"\b(\d{1,3}(?:[.\s]\d{3})+|\d+(?:,\d+)?)\s*(?:ha|hectares)\b", re.IGNORECASE)
+_GUARANTEES: tuple[tuple[str, str], ...] = (
+    (r"penhor", "penhor da safra"),
+    (r"aliena[cç][aã]o\s+fiduci", "alienação fiduciária"),
+    (r"\baval", "aval dos sócios"),
+    (r"hipoteca", "hipoteca"),
+    (r"\bCPR\b", "CPR"),
+    (r"cess[aã]o\s+de\s+receb", "cessão de recebíveis"),
+    (r"seguro\s+(?:agr[ií]cola|rural)", "seguro agrícola"),
+    (r"fian[cç]a", "fiança"),
+)
+_REQUEST_KINDS: tuple[tuple[str, str], ...] = (
+    (r"renova", "renovacao"),
+    (r"aument|amplia", "aumento_de_limite"),
+    (r"nova\s+opera|primeira\s+opera|opera[cç][aã]o\s+nova", "nova_operacao"),
+)
+# (nome por extenso, sigla, rótulo). A sigla só vale em maiúsculas ("MT"), para não confundir com palavras comuns.
+_REGIONS: tuple[tuple[str, str, str], ...] = (
+    (r"mato\s+grosso\s+do\s+sul", "MS", "Mato Grosso do Sul"),
+    (r"mato\s+grosso(?!\s+do\s+sul)", "MT", "Mato Grosso"),
+    (r"goi[aá]s", "GO", "Goiás"),
+    (r"paran[aá]", "PR", "Paraná"),
+    (r"rio\s+grande\s+do\s+sul", "RS", "Rio Grande do Sul"),
+    (r"bahia", "BA", "Bahia"),
+    (r"minas\s+gerais", "MG", "Minas Gerais"),
+    (r"tocantins", "TO", "Tocantins"),
+    (r"matopiba", "", "Matopiba"),
+)
 _PURPOSES = ("custeio", "investimento", "comercializacao", "comercialização", "industrializacao", "industrialização")
 _CROPS = ("soja", "milho", "algodao", "algodão", "cana", "cafe", "café", "trigo", "arroz")
 
@@ -84,6 +114,13 @@ def heuristic_interpret(prompt: str) -> InterpretedDemand:
     crop = next((c for c in _CROPS if re.search(rf"\b{c}\b", lower)), None)
     cycle = f"{m.group(1)}/{m.group(3)}" if (m := _CYCLE_RE.search(text)) else None
 
+    tenor: int | None = None
+    if m := _TENOR_MONTHS_RE.search(text):
+        tenor = int(m.group(1))
+    elif m := _TENOR_YEARS_RE.search(text):
+        tenor = int(m.group(1)) * 12
+    area = _to_number(m.group(1)) if (m := _AREA_RE.search(text)) else None
+
     return InterpretedDemand(
         intent="credito_agro",
         client_ref=client_ref,
@@ -92,6 +129,14 @@ def heuristic_interpret(prompt: str) -> InterpretedDemand:
         crop=_strip_accents(crop) if crop else None,
         cycle=cycle,
         notes="heuristic",
+        request_kind=next((k for pat, k in _REQUEST_KINDS if re.search(pat, lower)), None),
+        tenor_months=tenor,
+        guarantees=[g for pat, g in _GUARANTEES if re.search(pat, text, re.IGNORECASE)],
+        region=next(
+            (label for name, uf, label in _REGIONS if re.search(name, lower) or (uf and re.search(rf"\b{uf}\b", text))),
+            None,
+        ),
+        area_hectares=area,
     )
 
 

@@ -39,6 +39,7 @@ class CaseRecord:
     # params de rework que continuam valendo nas rodadas seguintes (ex.: baseline histórico do Risk)
     sticky_params: dict[str, dict[str, Any]] = field(default_factory=dict)
     human_adjustments: int = 0
+    attachments: list[dict[str, Any]] = field(default_factory=list)  # documentos anexados (registros como documents.json)
 
     def touch(self) -> None:
         self.state.updated_at = datetime.now(timezone.utc)
@@ -68,6 +69,9 @@ class CaseStore:
 
     def get(self, case_id: str) -> CaseRecord | None:
         return self._cases.get(case_id)
+
+    def all(self) -> list[CaseRecord]:
+        return list(self._cases.values())
 
     def __contains__(self, case_id: object) -> bool:
         return case_id in self._cases

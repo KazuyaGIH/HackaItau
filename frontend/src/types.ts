@@ -39,6 +39,7 @@ export type EventType =
   | 'GROUNDING_REJECTED'
   | 'OUTPUT_REJECTED'
   | 'AGENT_COMPLETED'
+  | 'DOCUMENT_ATTACHED'
   | 'REVIEW_STARTED'
   | 'REVIEW_ISSUE_FOUND'
   | 'REVIEW_COMPLETED'
@@ -97,6 +98,106 @@ export interface InterpretedDemand {
   crop: string | null
   cycle: string | null
   notes: string
+  request_kind: string | null
+  tenor_months: number | null
+  guarantees: string[]
+  region: string | null
+  area_hectares: number | null
+}
+
+export interface OpenQuestion {
+  key: string
+  question: string
+  blocking: boolean
+}
+
+export interface AttachmentView {
+  doc_id: string
+  filename: string
+  doc_type: string
+  size_bytes: number
+  chars: number
+  truncated: boolean
+  flagged: boolean
+  uploaded_at: string
+}
+
+export interface Citation {
+  id: string
+  title: string
+  excerpt: string
+}
+
+export type AssistKind =
+  | 'credit_demand'
+  | 'case_reply'
+  | 'adjustment'
+  | 'case_question'
+  | 'policy_answer'
+  | 'capabilities'
+  | 'out_of_scope'
+  | 'clarify'
+
+export interface AssistReply {
+  kind: AssistKind
+  message: string
+  bullets: string[]
+  citations: Citation[]
+  suggestions: string[]
+}
+
+export interface AgentMetrics {
+  agent_id: string
+  name: string
+  version: string
+  description: string
+  capabilities: string[]
+  tools: string[]
+  data_domains: string[]
+  forbidden_actions: string[]
+  runs: number
+  completed: number
+  failed: number
+  hits: number
+  validator_fixes: number
+  reopened_by_review: number
+  adjusted_by_human: number
+  errors: number
+  accuracy_pct: number | null
+  findings_owned: number
+  tool_calls: number
+  denied_calls: number
+  llm_calls: number
+  tokens_in: number
+  tokens_out: number
+  avg_context_tokens: number
+  avg_latency_ms: number | null
+  reviewer: {
+    findings_raised: number
+    material_findings: number
+    reworks_triggered: number
+    confirmed_by_rework: number
+    confirmation_pct: number | null
+  } | null
+}
+
+export interface Metrics {
+  cases: number
+  reports: number
+  human_decisions: number
+  tokens: { input: number; output: number }
+  context: {
+    squad_tokens: number
+    squad_calls: number
+    generalist_tokens: number
+    generalist_calls: number
+    saved_tokens: number
+    saved_pct: number | null
+    per_call_squad: number
+    per_call_generalist: number
+    per_call_saved_pct: number | null
+  }
+  agents: AgentMetrics[]
 }
 
 export interface MissingInfoRequest {
@@ -318,6 +419,14 @@ export interface Report {
   }
   governance: GovernanceView
   human_gate: HumanGateView
+  policy_limits?: {
+    source_doc_id: string
+    coverage_comfortable_min: number | null
+    coverage_reduced_buffer_min: number | null
+    coverage_attention_required_min: number | null
+    net_debt_ebitda_max: number | null
+    pro_forma_leverage_max: number | null
+  }
 }
 
 export interface CaseState {
@@ -340,4 +449,7 @@ export interface CaseState {
   llm_mode: 'real' | 'unconfigured'
   error: string | null
   last_event_seq: number
+  open_questions: OpenQuestion[]
+  attachments: AttachmentView[]
+  analyst_context: Record<string, string>
 }

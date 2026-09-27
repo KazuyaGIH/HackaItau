@@ -72,6 +72,7 @@ class LLMUsage(BaseModel):
     tokens_out: int = 0
     latency_ms: int = 0
     retries: int = 0
+    prompt_chars: int = 0  # tamanho do prompt enviado (métrica de contexto; ~4 caracteres por token)
 
 
 class AgentResult(BaseModel):

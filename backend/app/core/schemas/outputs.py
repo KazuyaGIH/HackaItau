@@ -162,6 +162,12 @@ class InterpretedDemand(BaseModel):
     crop: str | None  # "soja"
     cycle: str | None  # "2025/2026"
     notes: str = ""
+    # leitura mais ampla do pedido: só contexto para a squad (UNTRUSTED), nunca permissão
+    request_kind: str | None = None  # "nova_operacao" | "renovacao" | "aumento_de_limite"
+    tenor_months: int | None = None
+    guarantees: list[str] = Field(default_factory=list)
+    region: str | None = None
+    area_hectares: float | None = None
 
 
 OUTPUT_SCHEMAS: dict[str, type[BaseModel]] = {

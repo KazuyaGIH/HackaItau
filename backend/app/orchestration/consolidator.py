@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+from app.calculations.policy_params import load_policy_params
 from app.core.events import EventLog
 from app.core.evidence import EvidenceRegistry
 from app.core.schemas.agent import AgentResult, Assumption
@@ -21,6 +22,7 @@ from app.core.schemas.report import (
     CalculationView,
     GovernanceView,
     HumanGateView,
+    PolicyLimits,
     Report,
     ReportItem,
     ReportSummary,
@@ -157,7 +159,16 @@ def consolidate(
 
     open_count = sum(1 for f in review.findings if f.status == "open")
     resolved_count = sum(1 for f in review.findings if f.status == "resolved")
+    limits = load_policy_params().thresholds
     return Report(
+        policy_limits=PolicyLimits(
+            source_doc_id=limits.source_doc_id,
+            coverage_comfortable_min=limits.coverage.comfortable_min,
+            coverage_reduced_buffer_min=limits.coverage.reduced_buffer_min,
+            coverage_attention_required_min=limits.coverage.attention_required_min,
+            net_debt_ebitda_max=limits.net_debt_ebitda_max,
+            pro_forma_leverage_max=limits.pro_forma_leverage_max,
+        ),
         case_id=state.case_id,
         client_id=state.scope.client_ids[0],
         generated_at=datetime.now(timezone.utc),

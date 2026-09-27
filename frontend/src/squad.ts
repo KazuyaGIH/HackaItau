@@ -174,3 +174,48 @@ export function currentActivity(last: CaseEvent | undefined): string {
 }
 
 export const domainsText = (domains: string[]) => domains.map((d) => DOMAIN_LABEL[d] ?? d).join(', ')
+
+export const DOC_LABEL: Record<string, string> = {
+  demonstracoes_financeiras: 'demonstrações financeiras',
+  plano_de_plantio: 'plano de plantio',
+  matricula_ou_arrendamento: 'matrícula ou contrato de arrendamento',
+  documento_complementar: 'documento complementar',
+}
+
+// Chaves de contexto/resposta (backend) → como o Orquestrador fala delas.
+export const CONTEXT_KEY_LABEL: Record<string, string> = {
+  prazo_desejado_meses: 'prazo desejado',
+  garantias_oferecidas: 'garantias oferecidas',
+  tipo_de_operacao: 'tipo de operação',
+  regiao: 'região',
+  area_hectares: 'área',
+  requested_amount: 'valor',
+  purpose: 'finalidade',
+  crop: 'cultura',
+  cycle: 'safra',
+  observacoes_do_analista: 'observações',
+}
+
+// Pergunta de volta, em linguagem natural, para um pedido de informação do backend.
+export function naturalQuestion(reason: string, items: string[]): { lead: string; asks: string[] } {
+  if (reason === 'client_unresolved') {
+    return {
+      lead: 'Não encontrei esse cliente entre os que você pode consultar.',
+      asks: ['Para quem é a operação? Pode ser o nome da empresa ou o código dela (por exemplo, CLIENTE-001).'],
+    }
+  }
+  if (reason === 'client_ambiguous') {
+    return {
+      lead: 'Mais de um cliente combina com esse nome.',
+      asks: ['Qual deles? Me passe o código exato (por exemplo, CLIENTE-001).'],
+    }
+  }
+  const asks = items.map((item) => {
+    if (item === 'requested_amount') return 'Qual o valor que o cliente está pedindo? A política exige no mínimo R$ 1 milhão.'
+    if (DOC_LABEL[item]) {
+      return `Falta ${DOC_LABEL[item]}. Pode anexar o arquivo aqui na conversa ou me contar a situação desse documento.`
+    }
+    return `Preciso de: ${item.replace(/_/g, ' ')}.`
+  })
+  return { lead: 'A Elegibilidade parou a análise antes do Risco.', asks }
+}

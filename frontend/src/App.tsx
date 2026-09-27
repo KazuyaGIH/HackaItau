@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { Conversation } from './components/Conversation'
+import { PerformanceView } from './components/PerformanceView'
 import { SidePanel } from './components/SidePanel'
 import { Sidebar } from './components/Sidebar'
 import { PanelContext, type PanelApi, type PanelView } from './panel'
@@ -13,6 +14,7 @@ export default function App() {
   const [llmReady, setLlmReady] = useState<boolean | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => !narrow())
   const [panel, setPanel] = useState<PanelView | null>(null)
+  const [view, setView] = useState<'chat' | 'performance'>('chat')
 
   useEffect(() => {
     api.health().then(
@@ -42,6 +44,7 @@ export default function App() {
 
   const openConversation = (id: string) => {
     ws.openConversation(id)
+    setView('chat')
     if (narrow()) setSidebarOpen(false)
   }
 
@@ -59,15 +62,26 @@ export default function App() {
               onOpen={openConversation}
               onNew={() => {
                 ws.newChat()
+                setView('chat')
                 if (narrow()) setSidebarOpen(false)
               }}
+              onPerformance={() => {
+                setView('performance')
+                setPanel(null)
+                if (narrow()) setSidebarOpen(false)
+              }}
+              performanceActive={view === 'performance'}
               onClose={() => setSidebarOpen(false)}
               llmReady={llmReady}
             />
           </>
         )}
-        <Conversation ws={ws} sidebarOpen={sidebarOpen} onOpenSidebar={() => setSidebarOpen(true)} />
-        {panel && caseId && (
+        {view === 'performance' ? (
+          <PerformanceView sidebarOpen={sidebarOpen} onOpenSidebar={() => setSidebarOpen(true)} />
+        ) : (
+          <Conversation ws={ws} sidebarOpen={sidebarOpen} onOpenSidebar={() => setSidebarOpen(true)} />
+        )}
+        {view === 'chat' && panel && caseId && (
           <SidePanel
             view={panel}
             caseId={caseId}

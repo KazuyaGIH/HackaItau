@@ -29,7 +29,9 @@ async def get_market_data(params: dict[str, Any], deps: ToolDeps) -> Records:
 
 
 async def get_available_documents(params: dict[str, Any], deps: ToolDeps) -> Records:
-    return deps.repo.list_documents(params["client_id"], list(deps.scenario_tags))
+    # anexos do analista entram como documentos do cliente do case: mesmo filtro de campos, Injection Guard e auditoria
+    attached = [dict(a, client_id=params["client_id"]) for a in deps.attachments]
+    return deps.repo.list_documents(params["client_id"], list(deps.scenario_tags)) + attached
 
 
 async def get_product_catalog(params: dict[str, Any], deps: ToolDeps) -> Records:
