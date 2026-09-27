@@ -153,6 +153,29 @@ async def test_eligibility_blocks_when_mandatory_doc_missing_even_if_llm_says_re
     assert any(w.startswith("status_llm_sobrescrito") for w in result.warnings)
 
 
+@pytest.mark.parametrize(
+    ("requested", "fragment"),
+    [(10, "R$ 10,00) abaixo do ticket mínimo da política (R$ 1.000.000,00)"), (None, "não identificado")],
+)
+async def test_eligibility_blocks_requested_amount_below_catalog_minimum_or_absent(
+    registry, toolbox_factory, analyst, scope_001, requested, fragment
+):
+    task = _task("agro_eligibility").model_copy(update={"inputs": {**INPUTS, "requested_amount": requested}})
+    provider = FakeProvider(ELIG_OK)
+    result, *_ = await _run(registry, toolbox_factory, analyst, scope_001, "agro_eligibility", provider, task=task)
+    out = EligibilityOutput.model_validate(result.output)
+    assert out.status == "blocked"
+    [item] = [m for m in out.missing_items if m.item == "requested_amount"]
+    assert item.blocking and fragment in item.message
+
+
+async def test_eligibility_accepts_requested_amount_at_catalog_minimum(registry, toolbox_factory, analyst, scope_001):
+    task = _task("agro_eligibility").model_copy(update={"inputs": {**INPUTS, "requested_amount": 1_000_000}})
+    provider = FakeProvider(ELIG_OK)
+    result, *_ = await _run(registry, toolbox_factory, analyst, scope_001, "agro_eligibility", provider, task=task)
+    assert EligibilityOutput.model_validate(result.output).status == "ready"
+
+
 async def test_retry_once_on_invalid_json_then_fail_on_provider_error(registry, toolbox_factory, analyst, scope_001):
     provider = FakeProvider("isso não é json", ELIG_OK)
     result, events, _ = await _run(registry, toolbox_factory, analyst, scope_001, "agro_eligibility", provider)

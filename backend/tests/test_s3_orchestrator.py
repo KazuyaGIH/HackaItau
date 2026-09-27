@@ -159,6 +159,23 @@ async def test_eligibility_blocked_stops_before_risk_then_input_unblocks():
     assert st.scope.client_ids == ("CLIENTE-001",)
 
 
+async def test_requested_amount_below_catalog_minimum_blocks_at_eligibility_then_input_fixes(container):
+    rec = await _bootstrap(container, prompt=PROMPT.replace("R$ 50 milhões", "R$ 10"))
+    assert rec.state.interpreted.requested_amount == 10.0
+    await container.orchestrator.run(rec.state.case_id)
+    st = rec.state
+    assert st.status == CaseStatus.waiting_input, st.error
+    assert st.missing_info.reason == "eligibility_blocked" and st.missing_info.items == ["requested_amount"]
+    assert "R$ 10,00" in st.missing_info.message and "R$ 1.000.000,00" in st.missing_info.message
+    assert {e.agent_id for e in rec.events.of_type(EventType.AGENT_STARTED)} == {"agro_eligibility"}
+    assert st.error is None
+
+    container.orchestrator.provide_input(st.case_id, {"requested_amount": "50 milhões"})  # texto, como vem do form
+    assert st.interpreted.requested_amount == 50_000_000.0
+    await container.orchestrator.run(st.case_id)
+    assert st.status == CaseStatus.human_review_required, st.error
+
+
 # ------------------------------------------------------------------ adversarial demo
 
 

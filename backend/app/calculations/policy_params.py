@@ -50,6 +50,7 @@ class EligibilityPolicy(BaseModel):
     source_doc_id: str
     required_documents_by_purpose: dict[str, list[str]]
     required_fields: list[str]
+    min_requested_amount: float
     area_mismatch_tolerance_pct: float
 
     def kb_ids(self) -> list[str]:
