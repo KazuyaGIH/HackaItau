@@ -6,6 +6,7 @@ import type {
   CreateCaseRequest,
   EvidenceItem,
   HealthResponse,
+  Identity,
   HumanReviewRequest,
   InputRequest,
   Metrics,
@@ -46,6 +47,7 @@ const post = (url: string, body: unknown) =>
 
 export const api = {
   health: () => fetch('/api/health').then(json<HealthResponse>),
+  identities: () => fetch('/api/identities').then(json<Identity[]>),
   createCase: (body: CreateCaseRequest) => post('/api/cases', body).then(json<CaseState>),
   getCase: (id: string) => fetch(`/api/cases/${id}`).then(json<CaseState>),
   events: (id: string, after = 0) => fetch(`/api/cases/${id}/events?after=${after}`).then(json<CaseEvent[]>),

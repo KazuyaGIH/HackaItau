@@ -37,6 +37,12 @@ def health(c: Deps) -> dict:
     return {"ok": True, "llm_mode": llm_mode(c.settings), "demo_mode": c.settings.demo_mode}
 
 
+@router.get("/identities")
+def identities() -> list[dict]:
+    """Usuários fictícios da demo, para a tela de login. P1: IAM real (ARCHITECTURE.md §22)."""
+    return [u.model_dump() for u in load_identities().values()]
+
+
 @router.post("/assist", response_model=AssistReply)
 def assist_message(body: AssistRequest, c: Deps) -> AssistReply:
     """Lê a mensagem do analista: demanda (abrir case), dúvida de política, pergunta sobre o case, ajuste…"""
