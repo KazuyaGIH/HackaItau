@@ -60,6 +60,7 @@ export default function App() {
               statusOf={ws.statusOf}
               titleOf={ws.titleOf}
               onOpen={openConversation}
+              onDelete={ws.deleteConversation}
               onNew={() => {
                 ws.newChat()
                 setView('chat')

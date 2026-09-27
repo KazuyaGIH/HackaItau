@@ -7,8 +7,10 @@ import {
   LoaderCircle,
   PanelLeft,
   SquarePen,
+  Trash2,
   User,
 } from 'lucide-react'
+import { useState } from 'react'
 import type { CaseStatus } from '../types'
 import { ACTIVE, USER_ID, type Conversation } from '../workspace'
 import { OrchestratorMark } from './ui'
@@ -19,6 +21,7 @@ interface Props {
   statusOf: (c: Conversation) => CaseStatus | 'creating' | 'error' | null
   titleOf: (c: Conversation) => string
   onOpen: (id: string) => void
+  onDelete: (id: string) => void
   onNew: () => void
   onClose: () => void
   onPerformance: () => void
@@ -38,12 +41,62 @@ function StatusIcon({ status }: { status: CaseStatus | 'creating' | 'error' | nu
   return null
 }
 
+function ConversationRow({
+  conv,
+  title,
+  status,
+  current,
+  onOpen,
+  onDelete,
+}: {
+  conv: Conversation
+  title: string
+  status: CaseStatus | 'creating' | 'error' | null
+  current: boolean
+  onOpen: () => void
+  onDelete: () => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  if (confirming) {
+    return (
+      <div className="conv confirm" role="group" aria-label="Confirmar exclusão">
+        <span className="conv-title">Apagar?</span>
+        <button type="button" className="conv-danger" onClick={onDelete}>
+          Apagar
+        </button>
+        <button type="button" className="conv-cancel" onClick={() => setConfirming(false)} autoFocus>
+          Cancelar
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className={`conv${current ? ' current' : ''}`}>
+      <button type="button" className="conv-open" onClick={onOpen} title={title}>
+        <span className="conv-title">{title}</span>
+        {conv.branches.length > 1 && <span className="conv-versions">{conv.branches.length} versões</span>}
+        <StatusIcon status={status} />
+      </button>
+      <button
+        type="button"
+        className="conv-delete"
+        aria-label={`Apagar conversa: ${title}`}
+        title="Apagar conversa"
+        onClick={() => setConfirming(true)}
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  )
+}
+
 export function Sidebar({
   conversations,
   currentId,
   statusOf,
   titleOf,
   onOpen,
+  onDelete,
   onNew,
   onClose,
   onPerformance,
@@ -73,22 +126,17 @@ export function Sidebar({
 
       <div className="conv-list">
         {conversations.length > 0 && <p className="conv-label">Conversas</p>}
-        {conversations.map((c) => {
-          const status = statusOf(c)
-          return (
-            <button
-              key={c.id}
-              type="button"
-              className={`conv${c.id === currentId && !performanceActive ? ' current' : ''}`}
-              onClick={() => onOpen(c.id)}
-              title={titleOf(c)}
-            >
-              <span className="conv-title">{titleOf(c)}</span>
-              {c.branches.length > 1 && <span className="conv-versions">{c.branches.length} versões</span>}
-              <StatusIcon status={status} />
-            </button>
-          )
-        })}
+        {conversations.map((c) => (
+          <ConversationRow
+            key={c.id}
+            conv={c}
+            title={titleOf(c)}
+            status={statusOf(c)}
+            current={c.id === currentId && !performanceActive}
+            onOpen={() => onOpen(c.id)}
+            onDelete={() => onDelete(c.id)}
+          />
+        ))}
       </div>
 
       <div className="sidebar-foot">

@@ -371,6 +371,16 @@ export function useWorkspace() {
 
   const restartBranch = useCallback((convId: string, b: Branch) => void startBranch(convId, b, false), [startBranch])
 
+  // Apaga a conversa (todas as versões) deste navegador. Os cases continuam no backend, com a auditoria.
+  const deleteConversation = useCallback((convId: string) => {
+    const conv = conversationsRef.current.find((c) => c.id === convId)
+    const caseIds = new Set((conv?.branches ?? []).map((b) => b.caseId).filter((id): id is string => !!id))
+    setConversations((cs) => cs.filter((c) => c.id !== convId))
+    setCurrentId((id) => (id === convId ? null : id))
+    // para de acompanhar esses cases (polling)
+    setCases((all) => Object.fromEntries(Object.entries(all).filter(([id]) => !caseIds.has(id))))
+  }, [])
+
   const selectBranch = useCallback((convId: string, index: number) => {
     setConversations((cs) => cs.map((c) => (c.id === convId ? { ...c, active: index } : c)))
   }, [])
@@ -417,6 +427,7 @@ export function useWorkspace() {
       send,
       branchFrom,
       restartBranch,
+      deleteConversation,
       selectBranch,
       humanReview,
       run,
@@ -434,6 +445,7 @@ export function useWorkspace() {
       send,
       branchFrom,
       restartBranch,
+      deleteConversation,
       selectBranch,
       humanReview,
       run,

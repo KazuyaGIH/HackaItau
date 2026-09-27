@@ -583,3 +583,18 @@ pre.formula { white-space: pre-wrap; word-break: break-word; color: var(--ink-2)
 .suggestion-chips { flex-direction: column; align-items: flex-start; gap: 4px; }
 .suggestion-chips .pill { border: 0; padding: 4px 0; color: var(--navy); font-size: 13.5px; }
 .suggestion-chips .pill:hover { background: none; text-decoration: underline; }
+
+/* apagar conversa: o ícone aparece no hover/foco; confirmação na própria linha */
+.conv { padding: 0; gap: 0; position: relative; }
+.conv-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px 10px; text-align: left; font-size: 14px; border-radius: 9px; }
+.conv.current .conv-open { font-weight: 500; }
+.conv-delete { flex: none; display: none; align-items: center; justify-content: center; width: 28px; height: 28px; margin-right: 4px; border-radius: 7px; color: var(--ink-3); }
+.conv:hover .conv-delete, .conv:focus-within .conv-delete { display: inline-flex; }
+.conv:hover .conv-open svg, .conv:focus-within .conv-open svg { display: none; }
+.conv-delete:hover { color: var(--danger); background: var(--danger-bg); }
+.conv.confirm { padding: 6px 6px 6px 10px; gap: 6px; background: var(--danger-bg); }
+.conv.confirm .conv-title { font-size: 13px; color: var(--danger); }
+.conv-danger { font-size: 12.5px; font-weight: 600; color: #fff; background: var(--danger); border-radius: 7px; padding: 4px 9px; }
+.conv-cancel { font-size: 12.5px; color: var(--ink-2); border-radius: 7px; padding: 4px 8px; }
+.conv-cancel:hover { background: #fff; }
+@media (hover: none) { .conv-delete { display: inline-flex; } }
