@@ -49,7 +49,7 @@ function Body({ data }: { data: BenchmarkSummary }) {
   return (
     <section id="comparativo" className="cmp" aria-labelledby="cmp-title">
       <header className="cmp-intro">
-        <p className="how-kicker mono">comparativo</p>
+        <p className="how-kicker">comparativo</p>
         <h2 id="cmp-title">
           {h ? `O mesmo ${runs}/${runs}, com um modelo menor.` : 'Squad e agente generalista, lado a lado.'}
         </h2>
@@ -126,7 +126,7 @@ function Body({ data }: { data: BenchmarkSummary }) {
           value={(g) => `${decimal(g.mean_latency_seconds, 0)} s`}
         />
       </div>
-      <p className="cmp-legend mono" aria-hidden="true">
+      <p className="cmp-legend" aria-hidden="true">
         <span>
           <i className="is-squad" /> squad
         </span>
@@ -166,7 +166,7 @@ function Body({ data }: { data: BenchmarkSummary }) {
             e não inclui infraestrutura.
           </li>
         </ul>
-        <p className="cmp-meta mono">
+        <p className="cmp-meta">
           {data.published_snapshot ? 'benchmark publicado' : 'execução local'} · {new Date(data.created_at).toLocaleDateString('pt-BR')}
           {data.status === 'complete' ? '' : ' · parcial'} · {data.run_id}
         </p>
@@ -191,7 +191,7 @@ function Figure({ big, bigSub, label, sub }: { big: string; bigSub?: string; lab
 function Cell({ g }: { g?: Group }) {
   if (!g) {
     return (
-      <span role="cell" className="cmp-cell is-none mono">
+      <span role="cell" className="cmp-cell is-none">
         não testado
       </span>
     )
@@ -207,7 +207,7 @@ function Cell({ g }: { g?: Group }) {
       <span className="cmp-score">
         {g.automatic_passes}/{g.runs}
       </span>
-      <span className="cmp-cell-sub mono">
+      <span className="cmp-cell-sub">
         {c === null ? 'custo indisponível' : usd(c)} · {decimal(g.mean_latency_seconds, 0)} s
         {g.errors > 0 && ` · ${g.errors} ${g.errors === 1 ? 'falha operacional' : 'falhas operacionais'}`}
       </span>
@@ -231,7 +231,7 @@ function Bars({
   return (
     <figure className="cmp-chart">
       <figcaption>
-        {title} <span className="mono">{hint}</span>
+        {title} <span>{hint}</span>
       </figcaption>
       {groups.map((g) => {
         const name = `${archName(g)} · ${shortConfig(g)}`
@@ -244,7 +244,7 @@ function Bars({
             <span className="cmp-bar-track">
               <span className={`cmp-bar is-${g.architecture}`} style={{ width: `${Math.max(width(g), 0.6)}%` }} />
             </span>
-            <span className="cmp-bar-value mono">{value(g)}</span>
+            <span className="cmp-bar-value">{value(g)}</span>
           </div>
         )
       })}

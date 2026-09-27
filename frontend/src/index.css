@@ -1,8 +1,10 @@
 /* Atena — chat. Mesma estética da tela de entrada: papel quente, tinta carvão, laranja só para "ativo / atenção"
    (foco, enviar, agente trabalhando); verde/ocre/vermelho só para estados (autorizado, atenção, negado). */
 :root {
-  --font: 'IBM Plex Sans Variable', 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --display: 'Fraunces Variable', Georgia, serif;
+  /* uma letra só para o texto (botões, chat, painéis, títulos); Bodoni só no nome; mono só para IDs e ASCII */
+  --font: 'Bricolage Grotesque Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: var(--font);
+  --brand: 'Bodoni Moda Variable', 'Didot', 'Bodoni 72', Georgia, serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
   --bg: #fcf6ed;
   --side: #f5ecdf;
@@ -36,6 +38,7 @@
   line-height: 1.5;
   color: var(--ink);
   background: var(--bg);
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
 }
 @media (prefers-color-scheme: dark) {
@@ -71,7 +74,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); }
-button, input, textarea { font: inherit; color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; background: none; border: 0; padding: 0; }
 button:disabled { cursor: default; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
@@ -666,26 +669,27 @@ pre.formula { white-space: pre-wrap; word-break: break-word; color: var(--ink-2)
 .mono { font-family: var(--mono); }
 .sidebar { border-right-color: var(--line); }
 .brand-name {
-  font-family: var(--display);
-  font-size: 25px;
+  font-family: var(--brand);
+  font-size: 27px;
   line-height: 1;
-  font-weight: 580;
-  letter-spacing: -0.02em;
-  font-variation-settings: 'SOFT' 100, 'WONK' 0;
+  font-weight: 760;
+  letter-spacing: -0.005em;
+  font-variation-settings: 'opsz' 11;
   padding-left: 4px;
   width: fit-content;
   view-transition-name: brand;
 }
-.conv-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: lowercase; }
-.conv-versions, .elapsed, .team-progress, .scope-pill, .evidence-id, .timeline ol, .option-index, .dock-note { font-family: var(--mono); }
+.conv-label { font-size: 11.5px; font-weight: 550; letter-spacing: 0.06em; text-transform: lowercase; }
+.evidence-id { font-family: var(--mono); }
+.conv-versions, .elapsed, .team-progress, .timeline ol, .option-index { font-variant-numeric: tabular-nums; }
 .scope-pill, .dock-note { font-size: 11.5px; }
 .timeline ol { font-size: 11.5px; }
 
-.empty h1, .doc-head h2, .perf-empty h1, .panel-head h2 { font-family: var(--display); font-variation-settings: 'SOFT' 100, 'WONK' 0; letter-spacing: -0.015em; }
-.empty h1 { font-size: clamp(30px, 4.2vw, 42px); line-height: 1.08; font-weight: 560; max-width: 18ch; text-wrap: balance; margin-top: 10px; }
-.doc-head h2 { font-size: 24px; font-weight: 560; }
-.panel-head h2 { font-size: 18px; font-weight: 560; }
-.hero-figure, .kpi-value, .figure-value, .stat-row dd { font-family: var(--display); font-weight: 560; letter-spacing: -0.02em; }
+.empty h1, .doc-head h2, .perf-empty h1, .panel-head h2 { font-family: var(--display); letter-spacing: -0.025em; }
+.empty h1 { font-size: clamp(30px, 4.2vw, 42px); line-height: 1.08; font-weight: 620; max-width: 18ch; text-wrap: balance; margin-top: 10px; }
+.doc-head h2 { font-size: 24px; font-weight: 620; }
+.panel-head h2 { font-size: 18px; font-weight: 620; }
+.hero-figure, .kpi-value, .figure-value, .stat-row dd { font-family: var(--display); font-weight: 620; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 
 /* pintura: a da tela de entrada encolhe até este quadro (view transition "art"). Mesma proporção e sem corte,
    com raio e sombra proporcionais: o morph vira só uma mudança de escala, sem a imagem deformar ou "pular" */
@@ -715,7 +719,7 @@ pre.formula { white-space: pre-wrap; word-break: break-word; color: var(--ink-2)
 
 .suggestions button { background: var(--surface); border-color: var(--line); align-items: baseline; }
 .suggestions button:hover { background: var(--hover); border-color: var(--line-strong); }
-.sugg-num { flex: none; font-family: var(--mono); font-size: 11.5px; color: var(--accent-ink); }
+.sugg-num { flex: none; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--accent-ink); }
 
 /* ---------------- entrada na área: view transition + elementos que sobem em cascata ---------------- */
 ::view-transition-group(brand), ::view-transition-group(art) { animation-duration: 0.6s; animation-timing-function: cubic-bezier(0.65, 0, 0.2, 1); }

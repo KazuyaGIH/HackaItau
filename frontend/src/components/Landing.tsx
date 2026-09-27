@@ -179,7 +179,7 @@ export function Landing({ onSignIn }: { onSignIn: SignIn }) {
             <button type="submit" className={ready ? 'l-enter ready' : 'l-enter'} disabled={busy} ref={enterBtn}>
               Entrar
             </button>
-            <p className="l-note mono">Ambiente de demonstração · dados fictícios</p>
+            <p className="l-note">Ambiente de demonstração · dados fictícios</p>
           </form>
         </div>
 
@@ -189,10 +189,10 @@ export function Landing({ onSignIn }: { onSignIn: SignIn }) {
             src={ART}
             alt="Pintura de Leo von Klenze: a Acrópole de Atenas idealizada, com o Partenon e uma multidão na praça em primeiro plano."
           />
-          <figcaption className="l-credit mono">{ART_CREDIT}</figcaption>
+          <figcaption className="l-credit">{ART_CREDIT}</figcaption>
         </figure>
 
-        <a className="l-scroll mono" href="#como-funciona">
+        <a className="l-scroll" href="#como-funciona">
           <span>role para ver como funciona</span>
           <span className="l-scroll-arrow" aria-hidden="true">
             ↓
@@ -204,7 +204,7 @@ export function Landing({ onSignIn }: { onSignIn: SignIn }) {
 
       <Comparison />
 
-      <footer className="l-foot mono">
+      <footer className="l-foot">
         <pre aria-hidden="true">{'demanda ──▶ orquestrador ──▶ squad ──▶ revisor ──▶ humano'}</pre>
         <p>
           {PRODUCT} · ambiente de demonstração · dados fictícios · nenhuma credencial é enviada ou guardada · pintura em domínio

@@ -264,7 +264,7 @@ export function HowItWorks() {
   return (
     <section id="como-funciona" className="how" aria-labelledby="how-title">
       <header className="how-intro">
-        <p className="how-kicker mono">como funciona</p>
+        <p className="how-kicker">como funciona</p>
         <h2 id="how-title">Da demanda à decisão, em cinco passos.</h2>
       </header>
 
@@ -277,7 +277,7 @@ export function HowItWorks() {
             }}
             className={step === i + 1 ? 'act' : ''}
           >
-            <span className="how-num mono">{pad(i + 1)}</span>
+            <span className="how-num">{pad(i + 1)}</span>
             <p>{text}</p>
           </li>
         ))}
@@ -286,14 +286,14 @@ export function HowItWorks() {
       <div className="how-stage">
         {/* no celular as legendas viram espaçadores invisíveis e a ativa aparece aqui, junto do diagrama */}
         <p className="how-current" aria-hidden="true">
-          <span className="how-num mono">{pad(step)}</span>
+          <span className="how-num">{pad(step)}</span>
           {CAPTIONS[step - 1]}
         </p>
         <div className="how-figure">
           <Wide c={c} />
           <Tall c={c} />
         </div>
-        <div className="audit mono" aria-label="Trilha de auditoria">
+        <div className="audit" aria-label="Trilha de auditoria">
           <p className="audit-title">auditoria</p>
           <ol aria-live="off">
             {lines.map((l) => (
