@@ -184,6 +184,9 @@ function QuestionView({ state, active }: { state: CaseState | null; active: bool
   return (
     <div className="question">
       <p className="prose">{lead}</p>
+      {info.items.some((item) => ['crop', 'planting_plan_crop', 'market_data'].includes(item)) && (
+        <p className="prose">{info.message}</p>
+      )}
       {asks.length === 1 ? (
         <p className="prose">{asks[0]}</p>
       ) : (

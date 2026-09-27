@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     knowledge_corpus_dir: Path = APP_DIR / "knowledge" / "corpus"
     governance_dir: Path = APP_DIR / "governance"
     agent_cards_dir: Path = APP_DIR / "agents" / "cards"
+    benchmark_results_dir: Path = REPO_ROOT / "artifacts" / "evaluations"
+    benchmark_snapshot_file: Path | None = APP_DIR / "evaluation" / "published" / "summary.json"
 
     @property
     def llm_configured(self) -> bool:

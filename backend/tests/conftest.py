@@ -19,6 +19,20 @@ FIXTURES = Path(__file__).parent / "fixtures"
 PURPOSE = "credit_analysis_agro"
 
 
+@pytest.fixture
+def unjustified_baseline(monkeypatch):
+    """Injeta a premissa otimista antiga para continuar exercitando o fallback de revisão/retrabalho."""
+    from app.agents.risk.agent import RiskAgent
+
+    original = RiskAgent._policy
+
+    def choose(self, task):
+        selected = original(self, task)
+        return "declared" if selected == "auto" else selected
+
+    monkeypatch.setattr(RiskAgent, "_policy", choose)
+
+
 @pytest.fixture(scope="session")
 def settings():
     return get_settings()

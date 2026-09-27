@@ -9,6 +9,7 @@ import re
 from pydantic import BaseModel
 
 from app.agents.base import BaseAgent, OutputValidationError, ValidatedOutput
+from app.core.crops import product_supports_crop
 from app.core.schemas.agent import TaskSpec
 from app.core.schemas.context import ExecutionContext
 from app.core.schemas.evidence import EvidenceBundle
@@ -36,7 +37,7 @@ class StructuringAgent(BaseAgent):
         kept = []
         warnings: list[str] = []
         for alt in out.alternatives:
-            problems = _check_alternative(alt.model_dump(), requested, catalog)
+            problems = _check_alternative(alt.model_dump(), requested, catalog, task.inputs.get("crop"))
             if problems:
                 warnings.append(f"{alt.id} descartada: " + "; ".join(problems))
                 continue
@@ -52,13 +53,15 @@ class StructuringAgent(BaseAgent):
         return ValidatedOutput(output=out.model_dump(), warnings=warnings)
 
 
-def _check_alternative(alt: dict, requested: float | None, catalog: dict[str, dict]) -> list[str]:
+def _check_alternative(alt: dict, requested: float | None, catalog: dict[str, dict], crop: object) -> list[str]:
     problems: list[str] = []
     if requested is not None and float(alt["amount"]) > float(requested) + 1e-6:
         problems.append(f"amount {alt['amount']} > solicitado {requested}")
     prod = catalog.get(alt["product_id"])
     if prod is None:
         return problems + [f"product_id {alt['product_id']!r} não está no catálogo autorizado"]
+    if not product_supports_crop(prod, crop):
+        problems.append("produto incompatível com a cultura solicitada ou sem culturas autorizadas no catálogo")
     lo, hi = prod.get("tenor_months_min"), prod.get("tenor_months_max")
     if lo is not None and hi is not None and not (int(lo) <= int(alt["tenor_months"]) <= int(hi)):
         problems.append(f"tenor {alt['tenor_months']} fora de [{lo},{hi}] do produto")

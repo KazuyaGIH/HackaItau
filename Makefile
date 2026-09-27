@@ -3,6 +3,8 @@
 #   make run       demo: build do frontend + FastAPI servindo tudo em http://localhost:8000
 #   make dev       hot reload: vite (5173, proxy /api) + uvicorn --reload (8000); Ctrl+C encerra os dois
 #   make test      pytest + ruff + build/lint do frontend
+#   make benchmark comparativo real (API paga): 8 casos × 2 arquiteturas × 2 modelos
+#   make benchmark-plan mostra os casos e modelos sem chamar a API
 
 SHELL := /bin/bash
 .ONESHELL:
@@ -12,7 +14,7 @@ VENV   := backend/.venv
 PY     := $(CURDIR)/$(VENV)/bin/python
 PORT   ?= 8000
 
-.PHONY: help install install-backend install-frontend env run dev backend frontend build test clean
+.PHONY: help install install-backend install-frontend env run dev backend frontend build test clean benchmark benchmark-plan
 
 help:
 	@grep -E '^#   make' Makefile | sed 's/^#   //'
@@ -51,6 +53,12 @@ dev:
 test:
 	cd $(CURDIR)/backend && $(PY) -m pytest -q && $(PY) -m ruff check app tests && $(PY) -m ruff format --check app tests
 	cd $(CURDIR)/frontend && npm run build && npm run lint
+
+benchmark:
+	$(PY) -m app.evaluation.runner $(ARGS)
+
+benchmark-plan:
+	$(PY) -m app.evaluation.runner --dry-run $(ARGS)
 
 clean:
 	rm -rf frontend/dist backend/.pytest_cache backend/.ruff_cache

@@ -233,10 +233,10 @@ async def test_metrics_measure_hits_errors_and_context():
     agents = {a["agent_id"]: a for a in m["agents"]}
     assert m["cases"] == 1 and m["reports"] == 1
     risk = agents["agro_credit_risk"]
-    assert risk["reopened_by_review"] == 1 and risk["completed"] == 2 and risk["errors"] == 1
-    assert risk["accuracy_pct"] == 50.0 and risk["description"]
+    assert risk["reopened_by_review"] == 0 and risk["completed"] == 1 and risk["errors"] == 0
+    assert risk["completion_pct"] == 100.0 and risk["description"]
     review = agents["credit_review"]["reviewer"]
-    assert review["material_findings"] >= 1 and review["confirmed_by_rework"] >= 1
+    assert review["material_findings"] == 0 and review["confirmation_pct"] is None
     ctx = m["context"]
     assert ctx["squad_tokens"] > 0 and ctx["generalist_tokens"] > 0
     assert ctx["per_call_squad"] < ctx["per_call_generalist"]  # cada agente recebe só o que a tarefa pede
@@ -280,7 +280,7 @@ def test_http_assist_reply_attachment_and_metrics(client):
     assert m["cases"] == 1 and len(m["agents"]) == 4 and m["context"]["squad_calls"] > 0
 
 
-async def test_reviewer_confirmation_survives_a_later_human_adjustment():
+async def test_reviewer_confirmation_survives_a_later_human_adjustment(unjustified_baseline):
     from app.orchestration.metrics import compute_metrics
 
     c = _container()

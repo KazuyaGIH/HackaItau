@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.agents.base import BaseAgent, ValidatedOutput
 from app.calculations.policy_params import load_policy_params
+from app.core.crops import normalize_crop
 from app.core.schemas.agent import TaskSpec
 from app.core.schemas.context import ExecutionContext
 from app.core.schemas.evidence import EvidenceBundle, SourceRecord
@@ -43,6 +44,12 @@ class EligibilityAgent(BaseAgent):
         ] + [MissingItem(item=f, blocking=True, message="Campo obrigatório ausente no perfil agro.") for f in missing_fields]
         if amount_problem := _requested_amount_problem(task.inputs.get("requested_amount"), policy.min_requested_amount):
             missing.append(amount_problem)
+        culture_problems = _culture_problems(
+            task.inputs.get("crop"), agro, docs, evidence, require_plan="plano_de_plantio" in required_docs
+        )
+        for problem in culture_problems:
+            if not any(m.item == problem.item for m in missing):
+                missing.append(problem)
         required_set = set(required_docs) | set(policy.required_fields) | {REQUESTED_AMOUNT}
 
         warnings: list[EvidencedItem] = list(llm.warnings)
@@ -79,11 +86,80 @@ class EligibilityAgent(BaseAgent):
         else:
             status = "ready"
 
-        out = llm.model_copy(update={"status": status, "missing_items": missing, "warnings": warnings})
+        update = {"status": status, "missing_items": missing, "warnings": warnings}
+        if culture_problems:
+            update["summary"] = "Análise interrompida: " + " ".join(m.message for m in culture_problems)
+        out = llm.model_copy(update=update)
         result_warnings = []
         if llm.status != status:
             result_warnings.append(f"status_llm_sobrescrito:{llm.status}->{status}")
         return ValidatedOutput(output=out.model_dump(), warnings=result_warnings)
+
+
+def _culture_problems(
+    requested: object, agro: SourceRecord | None, docs: list[SourceRecord], evidence: EvidenceBundle, *, require_plan: bool
+) -> list[MissingItem]:
+    crop = normalize_crop(requested)
+    if not crop:
+        return [MissingItem(item="crop", blocking=True, message="Informe a cultura da operação antes da análise.")]
+    problems: list[MissingItem] = []
+    if agro is not None and normalize_crop(agro.data.get("crop")) != crop:
+        problems.append(
+            MissingItem(
+                item="crop",
+                blocking=True,
+                message=f"A demanda é de {crop}, mas o perfil agro disponível é de "
+                f"{agro.data.get('crop') or 'cultura não identificada'}. Corrija a cultura do pedido se foi um engano; "
+                "caso contrário, é necessário atualizar o perfil na base autorizada. "
+                "Uma resposta em texto não substitui produtividade e custos da cultura correta.",
+            )
+        )
+    plans = [doc for doc in docs if doc.data.get("type") == "plano_de_plantio"]
+    if require_plan and not plans:
+        problems.append(
+            MissingItem(
+                item="planting_plan_crop",
+                blocking=True,
+                message="Falta um plano de plantio com cultura identificada na base documental. "
+                "A confirmação em texto não permite verificar a cultura do documento.",
+            )
+        )
+    for doc in plans:
+        declared = normalize_crop((doc.data.get("extracted") or {}).get("crop"))
+        if declared != crop:
+            problems.append(
+                MissingItem(
+                    item="planting_plan_crop",
+                    blocking=True,
+                    message=f"O plano {doc.data.get('doc_id', doc.id)} "
+                    + (
+                        f"informa {declared}, diferente de {crop}. "
+                        if declared
+                        else "não tem cultura identificada nos dados extraídos. "
+                    )
+                    + "É necessário um plano com cultura verificada e compatível na base documental; "
+                    "anexar um texto sem essa identificação não resolve a pendência.",
+                )
+            )
+    market = [s for s in evidence.sources if s.resource_domain == "market_data"]
+    if not any(normalize_crop(s.data.get("commodity")) == crop for s in market):
+        problems.append(
+            MissingItem(
+                item="market_data",
+                blocking=True,
+                message=f"Não há referência de mercado autorizada para {crop}. "
+                "Atualize a base de mercado antes de executar a análise; não será usada a cotação de outra cultura.",
+            )
+        )
+    elif any(s.data.get("unit") != "BRL/saca" for s in market if normalize_crop(s.data.get("commodity")) == crop):
+        problems.append(
+            MissingItem(
+                item="market_data",
+                blocking=True,
+                message="A cotação precisa estar em BRL/saca para os cálculos atuais, que usam produtividade em sacas/ha.",
+            )
+        )
+    return problems
 
 
 def _requested_amount_problem(requested: object, minimum: float) -> MissingItem | None:

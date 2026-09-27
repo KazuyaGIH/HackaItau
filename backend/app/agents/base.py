@@ -150,6 +150,12 @@ class BaseAgent:
             sections.append(_rework_section(task.rework))
         sections.append("## Evidências disponíveis\n" + (render_evidence(evidence) or "(nenhuma)"))
         sections.append(
+            "## IDs autorizados para citação (lista fechada do backend)\n"
+            + ", ".join(sorted(evidence.allowed_ids()))
+            + "\nPara citar a análise de outro agente, use o OUT-* listado. Referências internas a esse resultado "
+            "não autorizam citar SRC/KB/CALC que não estejam nesta lista. Não abrevie nem invente IDs."
+        )
+        sections.append(
             "## Formato de saída\nResponda apenas com JSON válido conforme este schema:\n"
             + render_schema(OUTPUT_SCHEMAS[card.output_schema])
         )

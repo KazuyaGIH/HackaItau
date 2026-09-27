@@ -80,7 +80,7 @@ async def test_golden_path_ends_in_human_review_with_neutral_report(container):
     assert rep.sources and all(s.id.startswith(("SRC-", "KB-", "CALC-", "OUT-")) for s in rep.sources)
 
 
-async def test_baseline_61_vs_58_triggers_exactly_one_rework(container):
+async def test_baseline_61_vs_58_triggers_exactly_one_rework(container, unjustified_baseline):
     rec = await _bootstrap(container)
     await container.orchestrator.run(rec.state.case_id)
     st = rec.state

@@ -1,16 +1,17 @@
-import { ArrowDown, ClipboardList, FileText, FileWarning, Lock, PanelLeft, Sprout, TriangleAlert, X } from 'lucide-react'
+import { ArrowDown, ClipboardList, FileText, Lock, PanelLeft, TriangleAlert, X } from 'lucide-react'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ART } from '../brand'
+import { AsciiField } from './AsciiField'
 import { seqOfKey } from '../hooks'
 import { usePanel } from '../panel'
 import { pdfFile } from '../pdf'
 import { STARTERS, type Starter } from '../starters'
 import { buildTurns, type Turn } from '../transcript'
 import type { CaseEvent } from '../types'
-import { ACTIVE, USER_ID, type SendOptions, type Workspace } from '../workspace'
+import { ACTIVE, type SendOptions, type Workspace } from '../workspace'
 import { AssistantMessage } from './AssistantMessage'
 import { Composer, type ComposerMode } from './Composer'
 import { DecisionBar } from './DecisionBar'
-import { OrchestratorMark } from './ui'
 import { UserMessage } from './UserMessage'
 
 interface Props {
@@ -128,18 +129,19 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
     return (
       <main className="main">
         <TopBar sidebarOpen={sidebarOpen} onOpenSidebar={onOpenSidebar} />
+        <AsciiField className="empty-field" />
         <div className="empty">
-          <OrchestratorMark size={44} />
-          <h1>Qual demanda de crédito agro vamos analisar?</h1>
+          <img className="empty-art" src={ART} alt="" />
+          <h1>Qual demanda de crédito vamos analisar?</h1>
           <p className="muted">
             O Orquestrador monta uma squad de agentes especialistas, cada um com acesso só ao que a tarefa exige. A decisão
             final é sempre sua.
           </p>
           <Composer mode="new" placeholder={placeholder} onSend={send} autoFocus />
           <div className="suggestions">
-            {STARTERS.map((s) => (
+            {STARTERS.map((s, i) => (
               <button key={s.label} type="button" onClick={() => start(s)}>
-                {s.file ? <FileWarning size={16} /> : <Sprout size={16} />}
+                <span className="sugg-num">{String(i + 1).padStart(3, '0')}</span>
                 <span>
                   <strong>{s.label}</strong>
                   <span className="muted">{s.hint}</span>
@@ -243,7 +245,7 @@ export function Conversation({ ws, sidebarOpen, onOpenSidebar }: Props) {
         )}
         {status === 'human_review_required' && !pendingShown && (
           <DecisionBar
-            userId={state?.user_id ?? USER_ID}
+            userId={state?.user_id ?? ws.userId}
             busy={!!pendingShown}
             onApprove={(comment) => void ws.humanReview(branch, { decision: 'approve_next_step', comment })}
           />

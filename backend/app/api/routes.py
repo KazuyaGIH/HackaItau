@@ -18,6 +18,7 @@ from app.core.schemas.case import (
 from app.core.schemas.events import Event
 from app.core.schemas.evidence import AgentOutputRecord, CalculationRecord, SourceRecord
 from app.core.schemas.report import Report
+from app.evaluation.results import latest_summary
 from app.governance.loader import load_identities
 from app.orchestration.assist import AssistReply, AssistRequest, assist
 from app.orchestration.metrics import compute_metrics
@@ -34,6 +35,12 @@ def _handle(exc: OrchestratorError) -> HTTPException:
 @router.get("/health")
 def health(c: Deps) -> dict:
     return {"ok": True, "llm_mode": llm_mode(c.settings), "demo_mode": c.settings.demo_mode}
+
+
+@router.get("/identities")
+def identities() -> list[dict]:
+    """Usuários fictícios da demo, para a tela de login. P1: IAM real (ARCHITECTURE.md §22)."""
+    return [u.model_dump() for u in load_identities().values()]
 
 
 @router.post("/assist", response_model=AssistReply)
@@ -57,6 +64,12 @@ def assist_message(body: AssistRequest, c: Deps) -> AssistReply:
 def metrics(c: Deps) -> dict:
     """Desempenho dos agentes desde que o servidor subiu (estado em memória)."""
     return compute_metrics(c.store, c.agents)
+
+
+@router.get("/benchmarks/latest")
+def benchmark_latest(c: Deps) -> dict:
+    """Resumo do comparativo executado pelo CLI, independente dos cases em memória."""
+    return {"benchmark": latest_summary(c.settings.benchmark_results_dir, c.settings.benchmark_snapshot_file)}
 
 
 @router.post("/cases", response_model=CaseState, status_code=201)

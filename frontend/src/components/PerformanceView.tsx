@@ -5,6 +5,8 @@ import { DOMAIN_LABEL } from '../format'
 import { agentIcon } from '../iconMap'
 import { AGENT_META, toolLabel } from '../squad'
 import type { AgentMetrics, Metrics } from '../types'
+import { AsciiField } from './AsciiField'
+import { BenchmarkPanel } from './BenchmarkPanel'
 
 const FORBIDDEN_LABEL: Record<string, string> = {
   approve_credit: 'aprovar crédito',
@@ -42,6 +44,7 @@ export function PerformanceView({ sidebarOpen, onOpenSidebar }: Props) {
   const [data, setData] = useState<Metrics | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [benchmarkRefresh, setBenchmarkRefresh] = useState(0)
 
   const fetchMetrics = useCallback(
     () =>
@@ -63,6 +66,7 @@ export function PerformanceView({ sidebarOpen, onOpenSidebar }: Props) {
   }, [fetchMetrics])
   const reload = () => {
     setLoading(true)
+    setBenchmarkRefresh((value) => value + 1)
     void fetchMetrics()
   }
 
@@ -82,8 +86,10 @@ export function PerformanceView({ sidebarOpen, onOpenSidebar }: Props) {
           </button>
         </div>
       </header>
+      <AsciiField className="empty-field" />
       <div className="scroller">
         <div className="perf">
+          <BenchmarkPanel refresh={benchmarkRefresh} />
           {error && (
             <div className="callout danger">
               <TriangleAlert size={16} />
@@ -92,14 +98,24 @@ export function PerformanceView({ sidebarOpen, onOpenSidebar }: Props) {
           )}
           {data && data.cases === 0 && (
             <div className="perf-empty">
-              <h1>Ainda não há execuções para medir</h1>
+              <h1>Ainda não há análises nas conversas</h1>
               <p className="muted">
                 Rode uma análise numa conversa. As métricas contam desde que o servidor subiu, porque o estado fica em
                 memória.
               </p>
             </div>
           )}
-          {data && data.cases > 0 && <Dashboard m={data} />}
+          {data && data.cases > 0 && (
+            data.agents.every((a) => 'completion_pct' in a) ? <Dashboard m={data} /> : (
+              <div className="callout warn">
+                <TriangleAlert size={16} />
+                <p>
+                  O backend ainda está usando a definição anterior das métricas. Reinicie o servidor para carregar
+                  a correção e depois atualize esta tela. Os casos atuais ficam em memória e serão perdidos ao reiniciar.
+                </p>
+              </div>
+            )
+          )}
         </div>
       </div>
     </main>
@@ -111,22 +127,13 @@ function Dashboard({ m }: { m: Metrics }) {
   const calls = m.agents.reduce((s, a) => s + a.llm_calls, 0)
   return (
     <>
-      <section className="perf-hero" aria-label="Contexto por chamada">
-        {ctx.per_call_saved_pct !== null ? (
-          <>
-            <p className="hero-figure">{Math.round(ctx.per_call_saved_pct)}% menos contexto</p>
-            <p className="hero-caption">
-              por chamada ao modelo, comparado a um agente generalista que recebesse todas as evidências do case e os
-              playbooks de todos os especialistas.
-            </p>
-          </>
-        ) : (
-          <p className="hero-caption">Sem chamadas ao modelo medidas ainda.</p>
-        )}
+      <section className="perf-section">
+        <h2>Uso nas conversas</h2>
+        <p className="muted small">Atividade deste servidor desde a inicialização, separada do comparativo acima.</p>
       </section>
 
       <div className="kpis">
-        <Kpi label="Cases analisados" value={n(m.cases)} note={`${n(m.reports)} com relatório`} />
+        <Kpi label="Cases registrados" value={n(m.cases)} note={`${n(m.reports)} com relatório`} />
         <Kpi label="Chamadas ao modelo" value={n(calls)} note={pl(m.human_decisions, 'decisão humana', 'decisões humanas')} />
         <Kpi
           label="Tokens reais (provedor)"
@@ -134,82 +141,18 @@ function Dashboard({ m }: { m: Metrics }) {
           note={`${compact(m.tokens.input)} de entrada, ${compact(m.tokens.output)} de saída`}
         />
         <Kpi
-          label="Contexto evitado por chamada"
-          value={`${compact(Math.max(0, ctx.per_call_generalist - ctx.per_call_squad))} tokens`}
-          note={`${compact(ctx.per_call_squad)} na squad contra ${compact(ctx.per_call_generalist)} no generalista`}
+          label="Entrada média por chamada"
+          value={`${compact(ctx.per_call_squad)} tokens estimados`}
+          note="Estimativa pelo tamanho dos prompts dos especialistas"
         />
       </div>
 
       <section className="perf-section">
-        <h2>Squad comparada a um agente generalista</h2>
-        <p className="muted small">
-          Tokens estimados pelo tamanho real dos prompts (cerca de 4 caracteres por token). O generalista faria uma chamada
-          por rodada de análise, sempre com todo o contexto.
-        </p>
-        <div className="legend" aria-hidden="true">
-          <span>
-            <i className="key squad" />
-            Squad
-          </span>
-          <span>
-            <i className="key generalist" />
-            Agente generalista (estimado)
-          </span>
-        </div>
-        <div className="compare">
-          <BarPair
-            title="Contexto médio por chamada"
-            squad={ctx.per_call_squad}
-            generalist={ctx.per_call_generalist}
-            note={`${n(ctx.squad_calls)} chamadas da squad, ${n(ctx.generalist_calls)} do generalista`}
-          />
-          <BarPair
-            title="Contexto total enviado"
-            squad={ctx.squad_tokens}
-            generalist={ctx.generalist_tokens}
-            note={
-              ctx.saved_tokens >= 0
-                ? `A squad enviou ${compact(ctx.saved_tokens)} tokens a menos no total.`
-                : `No total a squad enviou ${compact(-ctx.saved_tokens)} tokens a mais: faz mais chamadas, incluindo a revisão e o retrabalho.`
-            }
-          />
-        </div>
-        <details className="numbers">
-          <summary>Ver os números em tabela</summary>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Medida</th>
-                <th>Squad</th>
-                <th>Generalista (estimado)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Contexto por chamada (tokens)</td>
-                <td className="num">{n(ctx.per_call_squad)}</td>
-                <td className="num">{n(ctx.per_call_generalist)}</td>
-              </tr>
-              <tr>
-                <td>Contexto total (tokens)</td>
-                <td className="num">{n(ctx.squad_tokens)}</td>
-                <td className="num">{n(ctx.generalist_tokens)}</td>
-              </tr>
-              <tr>
-                <td>Chamadas ao modelo</td>
-                <td className="num">{n(ctx.squad_calls)}</td>
-                <td className="num">{n(ctx.generalist_calls)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </details>
-      </section>
-
-      <section className="perf-section">
         <h2>Agentes</h2>
         <p className="muted small">
-          Acerto: execução concluída que passou pelo validador de primeira e não foi devolvida pela revisão. Erro: a revisão
-          devolveu a tarefa ou a execução falhou.
+          Conclusão mede se a execução terminou, inclusive após correções; não mede se a análise está correta.
+          Validação sem correções e devoluções da revisão são mostradas separadamente. Uma execução pode ter ambas as
+          intervenções; elas não devem ser somadas como erros distintos. Contagem desde o início do servidor.
         </p>
         <div className="agent-cards">
           {m.agents.map((a) => (
@@ -231,29 +174,8 @@ function Kpi({ label, value, note }: { label: string; value: string; note: strin
   )
 }
 
-function BarPair({ title, squad, generalist, note }: { title: string; squad: number; generalist: number; note: string }) {
-  const max = Math.max(squad, generalist, 1)
-  const row = (label: string, value: number, cls: string) => (
-    <div className="bar-row" title={`${label}: ${n(value)} tokens`}>
-      <span className="bar-label">{label}</span>
-      <span className="bar-track">
-        <span className={`bar ${cls}`} style={{ width: `${Math.max(2, (100 * value) / max)}%` }} />
-        <span className="bar-value">{compact(value)}</span>
-      </span>
-    </div>
-  )
-  return (
-    <figure className="bar-pair">
-      <figcaption>{title}</figcaption>
-      {row('Squad', squad, 'squad')}
-      {row('Generalista', generalist, 'generalist')}
-      <p className="small muted">{note}</p>
-    </figure>
-  )
-}
-
 function AgentCard({ a }: { a: AgentMetrics }) {
-  const pct = a.accuracy_pct
+  const pct = a.completion_pct
   const level = pct === null ? 'none' : pct >= 80 ? 'good' : pct >= 50 ? 'warn' : 'bad'
   const meta = AGENT_META[a.agent_id]
   return (
@@ -272,7 +194,7 @@ function AgentCard({ a }: { a: AgentMetrics }) {
       {a.reviewer ? (
         <div className="accuracy">
           <div className="accuracy-head">
-            <span>Problemas materiais confirmados pelo retrabalho</span>
+            <span>Achados materiais ausentes na revisão seguinte</span>
             <strong>{a.reviewer.confirmation_pct === null ? 'sem dados' : `${Math.round(a.reviewer.confirmation_pct)}%`}</strong>
           </div>
           <Meter pct={a.reviewer.confirmation_pct} level="good" />
@@ -280,24 +202,25 @@ function AgentCard({ a }: { a: AgentMetrics }) {
             {pl(a.reviewer.findings_raised, 'achado levantado', 'achados levantados')},{' '}
             {pl(a.reviewer.material_findings, 'material', 'materiais')},{' '}
             {pl(a.reviewer.reworks_triggered, 'retrabalho pedido', 'retrabalhos pedidos')},{' '}
-            {pl(a.reviewer.confirmed_by_rework, 'corrigido depois', 'corrigidos depois')}.
+            {pl(a.reviewer.confirmed_by_rework, 'ausente depois', 'ausentes depois')}.
           </p>
+          <p className="small muted">O desaparecimento de um achado não comprova, por si só, que ele estava correto.</p>
         </div>
       ) : (
         <div className="accuracy">
           <div className="accuracy-head">
-            <span>Taxa de acerto</span>
-            <strong>{pct === null ? 'sem execuções' : `${Math.round(pct)}%`}</strong>
+            <span>Conclusão das execuções encerradas</span>
+            <strong>{pct === null ? 'sem execuções encerradas' : `${Math.round(pct)}%`}</strong>
           </div>
           <Meter pct={pct} level={level} />
           <ul className="outcomes">
             <li>
               <CircleCheck size={14} className="ok" />
-              {pl(a.hits, 'acerto', 'acertos')}
+              {pl(a.completed, 'concluída', 'concluídas')}
             </li>
             <li>
               <Wrench size={14} />
-              {pl(a.validator_fixes, 'corrigida pelo validador', 'corrigidas pelo validador')}
+              {pl(a.validator_fixes, 'concluída com correções', 'concluídas com correções')}
             </li>
             <li>
               <CornerUpLeft size={14} className="warn" />
@@ -308,13 +231,18 @@ function AgentCard({ a }: { a: AgentMetrics }) {
               {pl(a.failed, 'falha', 'falhas')}
             </li>
           </ul>
+          <p className="small muted">
+            Validação sem correções: {n(a.validation_clean)} de {n(a.completed)} concluídas
+            {a.validation_first_pass_pct === null ? '.' : ` (${Math.round(a.validation_first_pass_pct)}%).`}
+            {' '}Conclusão e validação não são medidas de acurácia factual.
+          </p>
         </div>
       )}
 
       <dl className="agent-stats">
         <div>
-          <dt>Execuções</dt>
-          <dd className="num">{n(a.completed)}</dd>
+          <dt>Tentativas iniciadas</dt>
+          <dd className="num">{n(a.runs)}{a.in_progress > 0 ? ` (${n(a.in_progress)} em andamento)` : ''}</dd>
         </div>
         <div>
           <dt>Latência média</dt>

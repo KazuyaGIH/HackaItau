@@ -225,7 +225,7 @@ RISK_LLM = json.dumps(
 )
 
 
-async def test_risk_numbers_come_from_code_not_llm(registry, toolbox_factory, analyst, scope_001):
+async def test_risk_numbers_come_from_code_not_llm(registry, toolbox_factory, analyst, scope_001, unjustified_baseline):
     provider = FakeProvider(RISK_LLM)
     result, events, evidence = await _run(registry, toolbox_factory, analyst, scope_001, "agro_credit_risk", provider)
     out = RiskOutput.model_validate(result.output)

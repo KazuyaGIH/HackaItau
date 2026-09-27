@@ -73,6 +73,8 @@ class LLMUsage(BaseModel):
     latency_ms: int = 0
     retries: int = 0
     prompt_chars: int = 0  # tamanho do prompt enviado (métrica de contexto; ~4 caracteres por token)
+    tokens_cached: int = 0
+    usage_reported: bool = False  # ausência de usage não significa consumo zero
 
 
 class AgentResult(BaseModel):

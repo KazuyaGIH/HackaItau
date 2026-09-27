@@ -15,6 +15,7 @@ from app.agents.review.remediations import (
 from app.agents.runtime import collect_ids
 from app.calculations.credit_metrics import MetricInputs, credit_metrics
 from app.calculations.policy_params import PolicyParams
+from app.core.crops import product_supports_crop
 from app.core.events import EventLog
 from app.core.evidence import EvidenceRegistry
 from app.core.schemas.agent import AgentResult
@@ -36,6 +37,7 @@ class ReviewContext:
     events: EventLog
     policy: PolicyParams
     requested_amount: float | None
+    requested_crop: str | None = None
     _seq: int = field(default=0, init=False)
 
     def finding(
@@ -157,7 +159,10 @@ def policy_threshold_breach(ctx: ReviewContext) -> list[Finding]:
     if ro.metrics.pro_forma_leverage > t.pro_forma_leverage_max + EPS:
         breaches.append(("pro_forma_leverage", ro.metrics.pro_forma_leverage, t.pro_forma_leverage_max, "leverage|alavanc"))
     if ro.metrics.net_debt_ebitda > t.net_debt_ebitda_max + EPS:
-        breaches.append(("net_debt_ebitda", ro.metrics.net_debt_ebitda, t.net_debt_ebitda_max, "ebitda|d[ií]vida"))
+        # A métrica também é descrita como alavancagem atual/líquida. Reconhecer só
+        # "dívida" ou "EBITDA" produzia falso positivo para essas formulações usuais.
+        current_leverage = r"ebitda|d[ií]vida|alavancagem\s+(?:atual|l[ií]quida)|(?:net|current)[_ -]leverage"
+        breaches.append(("net_debt_ebitda", ro.metrics.net_debt_ebitda, t.net_debt_ebitda_max, current_leverage))
     out = []
     for name, value, limit, pattern in breaches:
         if re.search(pattern, risk_text):
@@ -226,6 +231,16 @@ def structure_vs_request_and_catalog(ctx: ReviewContext) -> list[Finding]:
                 ctx.finding("PRODUCT_UNKNOWN", "high", f"{alt.id}: produto {alt.product_id!r} fora do catálogo", STRUCTURING)
             )
             continue
+        if ctx.requested_crop is not None and not product_supports_crop(prod.data, ctx.requested_crop):
+            out.append(
+                ctx.finding(
+                    "PRODUCT_CROP_MISMATCH",
+                    "high",
+                    f"{alt.id}: produto {alt.product_id} não atende à cultura {ctx.requested_crop}.",
+                    STRUCTURING,
+                    [prod.id, *alt.evidence_ids],
+                )
+            )
         lo, hi = prod.data.get("tenor_months_min"), prod.data.get("tenor_months_max")
         if lo is not None and hi is not None and not int(lo) <= alt.tenor_months <= int(hi):
             out.append(
